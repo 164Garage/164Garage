@@ -6,7 +6,8 @@
   const J = p => fetch(p, {cache: "no-cache"}).then(r => r.ok ? r.json() : null).catch(() => null);
   const store = new Map();
   const ready = (async () => {
-    const [rel, val, cat] = await Promise.all([J("/data/releases.json"), J("/data/values.json"), J("/data/catalog.json")]);
+    const [rel, val, cat, site] = await Promise.all([J("/data/releases.json"), J("/data/values.json"), J("/data/catalog.json"), J("/data/site.json")]);
+    if(site) store.set("releasePhotos/_site", site);
     (rel || []).forEach(({id, ...d}) => store.set("releases/" + id, d));
     Object.entries(val || {}).forEach(([k, v]) => store.set("values/" + k, v));
     store.set("catalog/site", {items: cat || []});
