@@ -769,6 +769,35 @@ body.tray-on{overflow:hidden}body.tray-on .toast{z-index:1100!important}
 @media (hover:none){.key button:hover{border-color:color-mix(in srgb,var(--line) 65%,transparent);transform:none}}
 .ownc{display:inline-flex;align-items:center;gap:4px;align-self:flex-start;font-size:12px;font-weight:600;color:var(--steel);background:color-mix(in srgb,var(--steel) 10%,transparent);border-radius:999px;padding:1px 8px 1px 6px;margin-top:2px}
 .ownc svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* camera fits the phone screen; buttons respond on first tap */
+.cam{padding:max(10px,env(safe-area-inset-top)) 12px max(10px,env(safe-area-inset-bottom));align-items:stretch;background:#050608}
+.cam-box{height:100%;max-height:100dvh;margin:0 auto;gap:10px}
+.cam-view{flex:1 1 auto;min-height:0;aspect-ratio:auto;max-height:none}
+.cam button,.cam label{touch-action:manipulation;-webkit-user-select:none;user-select:none}
+.cam-top .cam-x{min-width:44px;min-height:44px}
+.cam-mode button{min-height:40px}
+.cam-shutter{position:relative;flex:0 0 auto}.cam-shutter:active i{transform:scale(.88)}
+.cam-count{position:absolute;top:-4px;right:-4px;min-width:26px;height:26px;padding:0 6px;border-radius:999px;background:var(--accent);color:#fff;font:700 13px/26px var(--body);text-align:center;box-shadow:0 0 0 3px rgba(5,6,8,.9)}
+.cam-count[hidden]{display:none}
+.cam-alt{min-width:56px;min-height:56px;justify-content:center}
+.cam-done{width:100%;max-width:360px;min-height:50px;font-size:16px}
+.cam-strip{flex:0 0 auto}
+@media (max-height:700px){.cam-tip{display:none}}
+/* portfolio */
+.pf-h{margin:4px 0 8px;font-size:15px}
+.pf{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+.pf-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.pf-tiles div{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;background:var(--bg)}
+.pf-tiles small{color:var(--muted);font-size:12px}.pf-tiles b{font:750 19px var(--display)}
+.pf-up b,td.pf-up{color:var(--forest)}.pf-down b,td.pf-down{color:#c2364a}
+.pf-tbl{width:100%;border-collapse:collapse;font-size:14px}.pf-tbl th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:4px 6px;border-bottom:1px solid var(--line)}
+.pf-tbl td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}.pf-tbl td:first-child{max-width:0;width:50%}
+.pf-tbl td:first-child .link{display:block;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;font-weight:600}
+.pf-tbl td small{display:block;color:var(--muted);font-size:11.5px}.pf-tbl td:not(:first-child),.pf-tbl th:not(:first-child){text-align:right;white-space:nowrap}
+.pf-empty{display:flex;flex-direction:column;gap:4px;padding:12px;border:1px dashed var(--line);border-radius:12px;margin-bottom:14px}
+@media (max-width:520px){.pf-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.qpaid{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);font-weight:600}.qpaid input{width:72px;padding:6px 8px;font-size:14px;border-radius:8px}
 </style>
 
 <div class="bar"><div class="in">
@@ -1878,6 +1907,7 @@ function camLeave(){ const shots = camShots, kind = camKind; camClose(); if(shot
 function camPaint(){ const n = camShots.length, d = document.querySelector("[data-camdone]"), tip = document.querySelector(".cam-tip");
   document.querySelectorAll("[data-cammode]").forEach(b=>b.setAttribute("aria-pressed", String(b.dataset.cammode===camMode)));
   if(d){ d.hidden = camMode!=="many" || !n; d.textContent = `Done · read ${n} card${n===1?"":"s"}` }
+  const cc = document.querySelector(".cam-count"); if(cc){ cc.hidden = camMode!=="many" || !n; cc.textContent = n }
   if(tip) tip.textContent = camMode==="many" ? (n ? `${n} card${n===1?"":"s"} saved. Keep snapping, then tap Done.` : "Snap each card one after another, then tap Done. We read them all.") : "Fit the whole card inside the frame, in good light." }
 async function camStart(){
   const msg = $("#cam-msg"), snap = document.querySelector("[data-camsnap]");
@@ -1904,9 +1934,9 @@ function camOpen(kind){
     <div class="cam-strip" id="cam-strip"></div>
     <input type="file" accept="image/*" capture="environment" id="${inp}" hidden>
     <div class="cam-ctl"><label class="cam-alt cam-lib"><svg viewBox="0 0 24 24"><path d="M4 6h16v12H4zM4 15l4-4 4 4 3-3 5 5M15 9.5h.01"/></svg><span>Photos</span><input type="file" accept="image/*" multiple id="cam-lib"></label>
-      <button class="cam-shutter" data-camsnap aria-label="Take photo" disabled><i></i></button>
+      <button class="cam-shutter" data-camsnap aria-label="Take photo" disabled type="button"><i></i><span class="cam-count" hidden></span></button>
       <button class="cam-alt" data-camflip aria-label="Switch camera"><svg viewBox="0 0 24 24"><path d="M4 9h3l2-3h6l2 3h3v10H4zM9 14a3 3 0 0 0 5.5 1.5M15 13a3 3 0 0 0-5.5-1.5"/></svg><span>Flip</span></button></div>
-    <button class="btn cam-done" data-camdone hidden></button>
+    <button class="btn cam-done" data-camdone hidden type="button"></button>
     <p class="cam-tip">Fit the whole card inside the frame, in good light.</p></div>`;
   document.body.appendChild(ov); document.body.classList.add("cam-on");
   camShots = []; camPaint(); camStart();
@@ -1921,7 +1951,7 @@ async function camSnap(){
   const kind = camKind;
   if(camMode==="many"){
     if(camShots.length >= 30){ toast("That's 30. Tap Done to read them."); return }
-    camShots.push(photo); const st = document.getElementById("cam-strip");
+    camShots.push(photo); try{ navigator.vibrate && navigator.vibrate(15) }catch(err){} const st = document.getElementById("cam-strip");
     if(st){ const im = new Image(); im.alt = ""; im.src = photo; st.appendChild(im); st.scrollLeft = st.scrollWidth }
     setTimeout(()=>document.querySelector(".cam-flash")?.classList.remove("on"), 250); camPaint(); return }
   setTimeout(()=>{ camClose(); trayAdd(kind, [photo]) }, 180);
@@ -2848,10 +2878,11 @@ function vGarage(){
 }
 /* quick edit: fast toggles for big collections, without opening each car */
 function quickList(list){
-  return `<p class="small muted" style="margin:0">Tap to switch carded or loose, and mark spares for trade. Open a car for grading and other details.</p><div class="qlist">${list.map(c=>{ const loose = /^loose/i.test(c.cond||""), v = carValue(c);
+  return `<p class="small muted" style="margin:0">Tap to switch carded or loose, mark spares for trade, and add what you paid (only you see it). Open a car for grading and other details.</p><div class="qlist">${list.map(c=>{ const loose = /^loose/i.test(c.cond||""), v = carValue(c);
     return `<div class="qrow">${thumb(c,{upload:false})}<div class="nm"><b>${esc(c.name)}</b><small>${esc([lineName(c.line), c.set].filter(Boolean).join(" · "))}${v?` · ${money(v)}`:""}</small></div>
       <div class="qacts"><div class="seg" role="group" aria-label="Packaging for ${esc(c.name)}"><button data-qcond="${c.id}|Carded" aria-pressed="${!loose}">Carded</button><button data-qcond="${c.id}|Loose" aria-pressed="${loose}">Loose</button></div>
-      <button class="qtrade" data-qtrade="${c.id}" aria-pressed="${!!c.trade}">${c.trade?"For trade ✓":"For trade"}</button></div></div>` }).join("")}</div>`;
+      <button class="qtrade" data-qtrade="${c.id}" aria-pressed="${!!c.trade}">${c.trade?"For trade ✓":"For trade"}</button>
+      <label class="qpaid"><span>Paid $</span><input id="qpaid-${c.id}" data-qpaid="${c.id}" inputmode="decimal" maxlength="9" placeholder="–" value="${+c.paid>0 ? esc(String(c.paid)) : ""}" aria-label="What you paid for ${esc(c.name)}"></label></div></div>` }).join("")}</div>`;
 }
 /* the LF / FT list as a picture, for swap meets and group posts */
 async function listImage(){
@@ -2994,6 +3025,8 @@ async function trayAddOne(it){
   await addCar({name:r.name, brand:r.brand, maker:r.maker, line:r.line, set:r.set, year:r.year, num:r.num, chase:!!r.chase, cond:it.cond||"Carded", photo:it.photo, aiValue: r.checked ? 0 : (r.value||0)}, it.kind==="scan" ? true : r.confidence==="high");
   it.status = "added"; return true;
 }
+document.addEventListener("change", async e=>{ const t = e.target; if(t.dataset && t.dataset.qpaid){ const c = cars.find(x=>x.id===t.dataset.qpaid); if(!c) return; const v = paidVal(t.value); if(v !== (+c.paid||0)){ await save({...c, paid:v}); toast(v ? `Saved: paid ${money(v)}` : "Purchase price removed") } return } }); 
+document.addEventListener("keydown", e=>{ if(e.key==="Enter" && e.target.dataset && e.target.dataset.qpaid) e.target.blur() });
 document.addEventListener("change", e=>{ const t = e.target; if(t.dataset && t.dataset.trcond){ const it = trayItem(t.dataset.trcond); if(it) it.cond = t.value } });
 document.addEventListener("click", async e=>{
   const el = document.getElementById("tray"); if(!el || !tray) return;
@@ -3179,11 +3212,31 @@ function valueChart(days){
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Collection value over time, from ${money0(first.v)} to ${money0(lastD.v)}"><path d="${line} L${pts[pts.length-1][0].toFixed(1)} ${H-P} L${P} ${H-P}Z" class="vc-fill"/><path d="${line}" class="vc-line"/>
     <text x="${P}" y="${H-8}" class="vc-t">${esc(first.d)}</text><text x="${W-P}" y="${H-8}" class="vc-t" text-anchor="end">${esc(lastD.d)}</text><text x="${W-P}" y="16" class="vc-t" text-anchor="end">${money0(hi)}</text></svg></div>`;
 }
+const paidVal = v => { const n = Math.round(parseFloat(String(v||"").replace(/[^0-9.]/g,""))*100)/100; return n>0 && n<100000 ? n : 0 };
+const roiText = (val, paid) => { const g = val - paid, pct = paid ? g/paid*100 : 0; return `${g>=0?"+":"−"}${money(Math.abs(g))} (${g>=0?"+":"−"}${Math.abs(pct).toFixed(pct && Math.abs(pct)<10?1:0)}%)` };
+function portfolio(o){
+  const held = o.filter(c=>+c.paid>0).map(c=>{ const paid = +c.paid, val = carValue(c) || paid, gain = val - paid; return {c, paid, val, gain, roi: gain/paid*100} });
+  const cost = held.reduce((a,h)=>a+h.paid,0), value = held.reduce((a,h)=>a+h.val,0);
+  return {held, cost, value, gain: value-cost, roi: cost ? (value-cost)/cost*100 : 0};
+}
+function vPortfolio(o){
+  const P = portfolio(o);
+  if(!P.held.length) return `<div class="pf-empty"><b>Track it like a stock portfolio</b><span class="small muted">Add what you paid for your cars (in Quick edit, or a car's Edit details) and see your total cost, current value, gain or loss and ROI. Only you see what you paid.</span></div>`;
+  const up = P.gain >= 0, sorted = [...P.held].sort((a,b)=>b.roi-a.roi);
+  const rows = [...sorted.slice(0,5), ...sorted.slice(5).filter(h=>h.roi<0).slice(-3)];
+  const row = h => `<tr><td><button class="link" data-own-detail="${h.c.id}">${esc(h.c.name)}</button><small>${esc(lineName(h.c.line))}</small></td><td>${money(h.paid)}</td><td>${money(h.val)}</td><td class="${h.gain>=0?"pf-up":"pf-down"}">${h.gain>=0?"+":"−"}${Math.abs(h.roi).toFixed(0)}%</td></tr>`;
+  return `<div class="pf">
+    <div class="pf-tiles"><div><small>Cost basis</small><b>${money(P.cost)}</b></div><div><small>Current value</small><b>${money(P.value)}</b></div>
+      <div class="${up?"pf-up":"pf-down"}"><small>Gain / loss</small><b>${up?"+":"−"}${money(Math.abs(P.gain))}</b></div><div class="${up?"pf-up":"pf-down"}"><small>ROI</small><b>${up?"+":"−"}${Math.abs(P.roi).toFixed(1)}%</b></div></div>
+    <table class="pf-tbl"><thead><tr><th>Car</th><th>Paid</th><th>Value</th><th>ROI</th></tr></thead><tbody>${rows.map(row).join("")}</tbody></table>
+    <p class="small muted" style="margin:0">${P.held.length} of ${o.length} cars have a purchase price. Cars without a market value count at what you paid.</p></div>`;
+}
 function vDash(){
   const o = own(); if(!o.length) return "";
   const by = (keyFn) => { const m = new Map(); o.forEach(c=>{ const k = keyFn(c) || "Other"; const e = m.get(k) || {n:0, v:0}; e.n++; e.v += carValue(c); m.set(k, e) }); return [...m.entries()].sort((a,b)=>b[1].v-a[1].v || b[1].n-a[1].n) };
   const tiers = by(tierOf), brands = by(c=>c.brand).slice(0,6), errors = o.filter(c=>c.error).length, graded = o.filter(c=>c.grade).length;
-  return `<details class="panel vdash" ${dashOpen?"open":""} data-dash="1"><summary><b>Value dashboard</b><span class="small muted">Growth, rarity tiers and top brands</span></summary>
+  return `<details class="panel vdash" ${dashOpen?"open":""} data-dash="1"><summary><b>Value dashboard</b><span class="small muted">Gain and ROI, growth, rarity tiers and top brands</span></summary>
+    <h3 class="pf-h">Portfolio</h3>${vPortfolio(o)}
     ${valueChart(vhist && vhist.days)}
     <div class="vdash-grid"><div><h3>By rarity tier</h3>${bars(tiers.map(([k,e])=>[k, Math.round(e.v), e.n+" car"+(e.n>1?"s":"")]), n=>money0(n))}</div>
     <div><h3>Top brands by value</h3>${bars(brands.map(([k,e])=>[k, Math.round(e.v), e.n+" car"+(e.n>1?"s":"")]), n=>money0(n))}</div></div>
@@ -3263,6 +3316,7 @@ function renderDetail(){
       <label>Made in<select id="e-madein">${MADEIN.map(x=>`<option value="${x}" ${(c.madeIn||"")===x?"selected":""}>${x||"Not noted"}</option>`).join("")}</select></label>
       <label class="c6" style="flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:14px"><input type="checkbox" id="e-error" ${c.error?"checked":""}> Factory error (wrong wheels, missing tampo, upside-down base…)</label>
       <label class="c6">What's the error?<input id="e-errnote" maxlength="80" value="${esc(c.errorNote||"")}" placeholder="Missing roof tampo"></label>
+      <label>What you paid <span style="font-weight:500">(only you see this)</span><input id="e-paid" inputmode="decimal" maxlength="9" value="${+c.paid>0 ? esc(String(c.paid)) : ""}" placeholder="1.25"></label>
       <label>Where you found it<input id="e-source" list="sourcelist" maxlength="40" value="${esc(c.source||"")}" placeholder="Walmart peg"><datalist id="sourcelist">${["Walmart","Target","Kroger","Dollar General","Walgreens","CVS","Mattel Creations","eBay","Flea market","Toy show","Trade","Gift"].map(x=>`<option value="${x}">`).join("")}</datalist></label>
       <label>Date you got it<input id="e-got" type="date" value="${esc(c.gotAt || (c.addedAt?localDate(new Date(c.addedAt)):""))}"></label>
       <label style="flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:14px;align-self:end;padding-bottom:10px"><input type="checkbox" id="e-chase" ${c.chase?"checked":""} ${c.status!=="want"?"disabled":""}> Chase car</label>
@@ -3271,7 +3325,7 @@ function renderDetail(){
       <div class="c6" style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn line" data-dmode="view">Cancel</button><button class="btn" type="submit">Save</button></div>
     </form>`;
   } else {
-    const facts = [["Brand", c.brand], ["Line", lineName(c.line)], ["Set", c.set || rel?.set], ["Card number", c.num || rel?.sub], ["Year", c.year || (relSet && (String(relSet.window).match(/(19|20)\d\d/)||[])[0])], ["Released", c.released || rel?.released], ["Condition", c.cond], ["Grade", c.grade], ["Card", c.cardVar], ["Flaws", (c.flaws||[]).join(", ")], ["Wheels", c.wheels], ["Made in", c.madeIn], ["Factory error", c.error ? (c.errorNote || "Yes") : ""], ["Found at", mineCar ? (c.source||"") : ""], ["Got it", c.gotAt ? fmt(c.gotAt) : c.addedAt ? fmt(c.addedAt) : ""], ["Maker", makerOf(c)!=="Hot Wheels" ? makerOf(c) : ""], ["Scale", "1:64"], ["Stored at", mineCar ? (c.location||"") : ""],
+    const facts = [["Brand", c.brand], ["Line", lineName(c.line)], ["Set", c.set || rel?.set], ["Card number", c.num || rel?.sub], ["Year", c.year || (relSet && (String(relSet.window).match(/(19|20)\d\d/)||[])[0])], ["Released", c.released || rel?.released], ["Condition", c.cond], ["Grade", c.grade], ["Card", c.cardVar], ["Flaws", (c.flaws||[]).join(", ")], ["Wheels", c.wheels], ["Made in", c.madeIn], ["Factory error", c.error ? (c.errorNote || "Yes") : ""], ["Found at", mineCar ? (c.source||"") : ""], ["You paid", mineCar && +c.paid>0 ? money(+c.paid) + (carValue(c) ? ` · ${roiText(carValue(c), +c.paid)}` : "") : ""], ["Got it", c.gotAt ? fmt(c.gotAt) : c.addedAt ? fmt(c.addedAt) : ""], ["Maker", makerOf(c)!=="Hot Wheels" ? makerOf(c) : ""], ["Scale", "1:64"], ["Stored at", mineCar ? (c.location||"") : ""],
 ].filter(([,v])=>v);
     const vi = valueInfo(c), mk = marketFor(c);
     body = `${huntBadge(c)}
@@ -3561,7 +3615,7 @@ document.addEventListener("submit", async e=>{
   if(f.id==="carform"){
     const c = cars.find(x=>x.id===detail?.car.id); if(!c) return;
     await save({...c, name:$("#e-name").value.trim()||c.name, brand:$("#e-brand").value.trim(), line:$("#e-line").value, set:$("#e-set").value.trim(), year:$("#e-year").value.trim(), num:$("#e-num").value.trim(), cond:$("#e-cond").value, gotAt:$("#e-got").value, chase:$("#e-chase").checked, notes:$("#e-notes").value.trim(), location:$("#e-loc").value.trim(),
-      grade:$("#e-grade").value, cardVar:$("#e-cardvar").value, flaws:[...document.querySelectorAll("#carform [data-flaw]:checked")].map(x=>x.dataset.flaw), wheels:$("#e-wheels").value.trim(), source:$("#e-source").value.trim(), madeIn:$("#e-madein").value, error:$("#e-error").checked, errorNote:$("#e-errnote").value.trim()});
+      grade:$("#e-grade").value, cardVar:$("#e-cardvar").value, flaws:[...document.querySelectorAll("#carform [data-flaw]:checked")].map(x=>x.dataset.flaw), wheels:$("#e-wheels").value.trim(), source:$("#e-source").value.trim(), paid: paidVal($("#e-paid").value), madeIn:$("#e-madein").value, error:$("#e-error").checked, errorNote:$("#e-errnote").value.trim()});
     detail.mode="view"; renderDetail(); toast("Details saved"); return }
   if(f.id==="profform"){
     const d={ nick:$("#p-nick").value.trim(), city:areaKey($("#p-city").value) || $("#p-city").value.trim(), bio:$("#p-bio").value.trim(), fav:$("#p-fav").value.trim(), social:$("#p-social").value.trim(), color:(document.querySelector('input[name="p-color"]:checked')||{}).value||"steel", avatar:profEdit?.avatar||"", public:$("#p-pub").checked };
