@@ -186,6 +186,20 @@ body>.wrap{width:100%}
 .reports{display:flex;flex-direction:column;gap:10px}.rep{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px}.rep > div:first-child{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}.rep p{margin:0;font-size:14px}.rep .acts{display:flex;gap:6px;align-items:flex-start}
 .stbadges{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}.st{font:700 10.5px/1 var(--mono);letter-spacing:.04em;text-transform:uppercase;padding:4px 7px;border-radius:5px;border:1px solid var(--line);color:var(--muted);background:var(--panel)}.st.sale{color:#fff;background:var(--accent);border-color:var(--accent)}.st.trade{color:var(--accent);border-color:var(--accent)}
 .cta{display:flex;gap:8px;flex-wrap:wrap}
+/* finds map: where each car was found */
+.findsmap{height:380px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--soft);margin:4px 0 14px;position:relative;z-index:0}
+.minimap{height:170px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--soft);position:relative;z-index:0}
+.findsmap .map-msg,.minimap .map-msg{display:grid;place-items:center;height:100%;padding:16px;text-align:center;color:var(--muted);font-size:14px}
+.finds-stats{display:flex;gap:18px;flex-wrap:wrap;margin:0 0 6px}.finds-stats div{display:flex;flex-direction:column}.finds-stats b{font:700 20px/1.1 var(--display)}.finds-stats small{color:var(--muted)}
+.stores{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.store{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.store h4{margin:0;font-size:15px}.store .small{margin:2px 0 8px}
+.store ul{margin:0;padding:0;list-style:none;display:grid;gap:4px}
+.store li button,.map-pop button{background:none;border:0;padding:0;color:var(--accent);cursor:pointer;text-align:left;font:inherit}
+.map-pop{font:13px/1.45 var(--body);min-width:160px}.map-pop b{display:block;font-size:14px}.map-pop ul{margin:6px 0 0;padding-left:16px}
+.pinrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}}
+:root[data-theme="dark"] .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}
 .viewtoggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:4px 0 8px}.viewtoggle button{border:0;background:var(--panel);padding:7px 14px;font-weight:600;font-size:13px;color:var(--muted);cursor:pointer}.viewtoggle button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
 .binder{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding:4px 18px 18px}.slot{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px;display:flex;flex-direction:column;gap:4px;text-align:left;cursor:pointer;min-width:0}.slot .ph{width:100%;height:auto;aspect-ratio:16/9}.slot b{font-size:13px;line-height:1.25}.slot small{color:var(--muted);font-size:11.5px}.slot .slotst{font:600 11px var(--mono);color:var(--muted)}.slot.got{border-color:var(--accent)}.slot.got .slotst{color:var(--accent)}.slot:hover{border-color:var(--accent)}
 .qlist{display:flex;flex-direction:column}.qrow{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}.qrow .nm{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.qrow .nm small{color:var(--muted);font-size:12.5px}
@@ -2833,6 +2847,60 @@ function vProfile(){
 
 let gview = "cards";
 let gAdd = false, gq = "", gline = "", gbrand = "", gmaker = "", gsort = "new", gstat = "", addPhoto = "";
+/* ---------- Finds map: where you found each car, and at what store ---------- */
+const hasNum = v => typeof v==="number" && isFinite(v);
+// an exact pin from "Use my location" wins; otherwise the store's city from the built-in city list
+function foundPt(c){ if(hasNum(c.foundLat) && hasNum(c.foundLng)) return [c.foundLat, c.foundLng]; const a = AREA[areaKey(c.foundCity)]; return a ? [a[0], a[1]] : null }
+const foundText = c => [c.source, c.foundAddr, areaKey(c.foundCity) || c.foundCity].filter(Boolean).join(" · ");
+function mapsUrl(c){ const p = foundPt(c), q = [c.source, c.foundAddr, areaKey(c.foundCity) || c.foundCity].filter(Boolean).join(", ");
+  return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(hasNum(c.foundLat) ? `${p[0]},${p[1]}` : q) }
+function nearestCity(la, lo){ let best = "", bd = Infinity; for(const [k,[a,b]] of Object.entries(AREA)){ const d = (a-la)**2 + ((b-lo)*Math.cos(la*Math.PI/180))**2; if(d<bd){ bd=d; best=k } } return bd < 1 ? best : "" }   // within ~60 miles of a listed city
+// cars found at the same store (same name, address and spot) share one pin
+function storeGroups(list){
+  const m = new Map();
+  for(const c of list){ const pt = foundPt(c); if(!pt && !c.source) continue;
+    const city = areaKey(c.foundCity) || c.foundCity || "";
+    const key = [norm(c.source||""), norm(c.foundAddr||""), pt ? pt.map(x=>x.toFixed(3)).join(",") : norm(city)].join("|");
+    if(!m.has(key)) m.set(key, {store:c.source||"Unknown store", addr:c.foundAddr||"", city, pt, cars:[]});
+    m.get(key).cars.push(c) }
+  return [...m.values()].sort((a,b)=>b.cars.length-a.cars.length || a.store.localeCompare(b.store));
+}
+let leafletP = null;
+function loadLeaflet(){
+  if(window.L) return Promise.resolve(window.L);
+  return leafletP ??= new Promise((ok, no) => {
+    const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"; document.head.appendChild(css);
+    const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
+    s.onload = () => window.L ? ok(window.L) : no(new Error("Leaflet missing")); s.onerror = () => { leafletP = null; no(new Error("Leaflet failed")) };
+    document.head.appendChild(s) });
+}
+const liveMaps = new WeakMap();
+async function drawMap(el, groups, {zoom = 13} = {}){
+  if(!el) return; const pins = groups.filter(g=>g.pt); if(!pins.length) return;
+  let L; try{ L = await loadLeaflet() }catch(e){ el.innerHTML = `<div class="map-msg">The map couldn't load right now. Your stores are still listed below.</div>`; return }
+  if(!el.isConnected) return;
+  liveMaps.get(el)?.remove(); el.innerHTML = "";
+  const map = L.map(el, {scrollWheelZoom:false, attributionControl:true}); liveMaps.set(el, map);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(map);
+  const accent = getComputedStyle(document.body).getPropertyValue("--accent").trim() || "#2b5c8a";
+  const marks = pins.map(g => L.circleMarker(g.pt, {radius: Math.min(22, 7 + Math.sqrt(g.cars.length)*3), color:"#fff", weight:2, fillColor:accent, fillOpacity:.85}).addTo(map)
+    .bindPopup(`<div class="map-pop"><b>${esc(g.store)}</b>${[g.addr, g.city].filter(Boolean).map(esc).join(" · ")}<ul>${g.cars.slice(0,12).map(c=>`<li><button data-own-detail="${esc(c.id)}">${esc(c.name)}</button></li>`).join("")}${g.cars.length>12?`<li>+${g.cars.length-12} more</li>`:""}</ul></div>`));
+  if(marks.length===1) map.setView(pins[0].pt, zoom); else map.fitBounds(L.featureGroup(marks).getBounds().pad(0.2), {maxZoom: 13});
+  // Leaflet stops clicks inside popups from bubbling, so open cars from here
+  el.addEventListener("click", e => { const b = e.target.closest("[data-own-detail]"); if(!b) return; const c = cars.find(x=>x.id===b.dataset.ownDetail); if(c) openDetail(uid, c) }, true);
+}
+function findsView(list){
+  const groups = findsView.groups = storeGroups(list), mapped = groups.filter(g=>g.pt), noStore = list.filter(c=>!c.source && !foundPt(c)).length;
+  const cities = new Set(groups.map(g=>g.city).filter(Boolean)), top = groups[0];
+  if(!groups.length) return empty("No finds on the map yet", "Open a car, tap Edit details, and fill in where you found it: the store and its city. Tap Pin my location when you're in the store to drop an exact pin.");
+  return `<div class="finds-stats"><div><b>${groups.length}</b><small>Store${groups.length===1?"":"s"}</small></div><div><b>${cities.size}</b><small>Cit${cities.size===1?"y":"ies"}</small></div>${top && top.cars.length>1 && !(groups[1] && groups[1].cars.length===top.cars.length)?`<div><b>${esc(top.store)}</b><small>Best spot · ${top.cars.length} car${top.cars.length===1?"":"s"}</small></div>`:""}</div>
+    ${mapped.length ? `<div class="findsmap" id="findsmap" role="region" aria-label="Map of where you found your cars"><div class="map-msg">Loading map…</div></div>` : `<p class="small muted">Add a city to your stores to see them on the map.</p>`}
+    <div class="stores">${groups.map(g=>`<section class="store"><h4>${esc(g.store)}</h4><p class="small muted">${esc([g.addr, g.city].filter(Boolean).join(" · ") || "No city yet")} · ${g.cars.length} car${g.cars.length===1?"":"s"}${g.pt?"":" · not on the map"}</p>
+      <ul>${g.cars.map(c=>`<li><button data-own-detail="${esc(c.id)}">${esc(c.name)}</button>${c.gotAt?` <small class="muted">${esc(c.gotAt)}</small>`:""}</li>`).join("")}</ul></section>`).join("")}</div>
+    ${noStore ? `<p class="small muted">${noStore} car${noStore===1?" has":"s have"} no store yet. Open a car and tap Edit details to add where you found it.</p>` : ""}`;
+}
+function mountFinds(){ const el = document.getElementById("findsmap"); if(el && findsView.groups) drawMap(el, findsView.groups, {zoom: 11}) }
+
 function garageCard(c){
   const acts = c.status==="want"
     ? `<button class="btn sm" data-act="found" data-id="${c.id}">Found it</button><button class="btn line sm" data-act="del" data-id="${c.id}">Remove</button>`
@@ -2848,7 +2916,7 @@ function vGarage(){
   const forLines = o.filter(c=>fBrand(c) && fMaker(c)), forBrands = o.filter(c=>fLine(c) && fMaker(c)), forMakers = o.filter(c=>fLine(c) && fBrand(c));
   const lineOpts = LINES.filter(l=>forLines.some(c=>c.line===l)), hasChase = forLines.some(c=>isChase(c));
   const makerOpts = MAKERS.filter(m=>forMakers.some(c=>makerOf(c)===m)), allMakers = MAKERS.filter(m=>o.some(c=>makerOf(c)===m));
-  let list = o.filter(c => (!gq || norm(c.name+c.brand+c.set+(c.location||"")).includes(norm(gq))) && (!gline || (gline==="__chase" ? isChase(c) : c.line===gline)) && (!gbrand || c.brand===gbrand) && (!gmaker || makerOf(c)===gmaker) && (!gstat || statusOf(c, uid)[gstat]));
+  let list = o.filter(c => (!gq || norm(c.name+c.brand+c.set+(c.location||"")+(c.source||"")+(c.foundAddr||"")+(c.foundCity||"")).includes(norm(gq))) && (!gline || (gline==="__chase" ? isChase(c) : c.line===gline)) && (!gbrand || c.brand===gbrand) && (!gmaker || makerOf(c)===gmaker) && (!gstat || statusOf(c, uid)[gstat]));
   const yr = c => yearOf(c) || (gsort==="young" ? -1 : 9999);
   list.sort((a,b)=> gsort==="value" ? carValue(b)-carValue(a) : gsort==="valuelo" ? carValue(a)-carValue(b) : gsort==="az"?a.name.localeCompare(b.name) : gsort==="brand"?String(a.brand||"~").localeCompare(String(b.brand||"~"))
     : gsort==="young" ? yr(b)-yr(a) || (b.addedAt||0)-(a.addedAt||0) : gsort==="old" ? yr(a)-yr(b) || (b.addedAt||0)-(a.addedAt||0) : (b.addedAt||0)-(a.addedAt||0));
@@ -2865,14 +2933,14 @@ function vGarage(){
     </form>`:""}${aiPanel()}
     ${hasAccount() && importPlan ? importPreview() : ""}
     ${false ? `<div class="vaulttools">${downloads?`<button class="btn line sm" data-vexport="csv">Export garage (CSV)</button><button class="btn line sm" data-vexport="json">Export (JSON backup)</button><button class="btn line sm" data-vexport="template">CSV template</button>`:""}<label class="photo-in" style="flex-direction:row"><input type="file" accept=".csv,text/csv" id="f-import"><span class="btn line sm">${importing?`Importing ${importing}…`:"Import wishlist (CSV)"}</span></label><span class="small muted dropnote">or drop a .csv file here</span></div>${importPreview()}` : ""}
-    ${o.length && hasAccount() ? `<div class="viewtoggle" role="group" aria-label="Garage view"><button data-gview="cards" aria-pressed="${gview==="cards"}">Cards</button><button data-gview="quick" aria-pressed="${gview==="quick"}">Quick edit</button></div>` : ""}
+    ${o.length && hasAccount() ? `<div class="viewtoggle" role="group" aria-label="Garage view"><button data-gview="cards" aria-pressed="${gview==="cards"}">Cards</button><button data-gview="quick" aria-pressed="${gview==="quick"}">Quick edit</button><button data-gview="map" aria-pressed="${gview==="map"}">Finds map</button></div>` : ""}
     <div class="toolbar"><input id="gq" type="search" placeholder="Search your garage" aria-label="Search your garage" value="${esc(gq)}">
       ${allMakers.length>1 ? `<select id="gmaker" aria-label="Maker"><option value="">All makers</option>${makerOpts.map(m=>`<option value="${esc(m)}" ${gmaker===m?"selected":""}>${esc(m)} (${forMakers.filter(c=>makerOf(c)===m).length})</option>`).join("")}</select>` : ""}
       <select id="gline" aria-label="Line"><option value="">All lines</option>${hasChase?`<option value="__chase" ${gline==="__chase"?"selected":""}>Chase (${forLines.filter(c=>isChase(c)).length})</option>`:""}${lineOpts.map(l=>`<option value="${l}" ${gline===l?"selected":""}>${esc(lineName(l))} (${forLines.filter(c=>c.line===l).length})</option>`).join("")}</select>
       ${brandSelect("gbrand", forBrands, gbrand)}
       <select id="gsort" aria-label="Sort"><option value="new">Newest</option><option value="young" ${gsort==="young"?"selected":""}>Youngest (newest release)</option><option value="old" ${gsort==="old"?"selected":""}>Oldest release</option><option value="az" ${gsort==="az"?"selected":""}>Name A–Z</option><option value="brand" ${gsort==="brand"?"selected":""}>Brand</option><option value="value" ${gsort==="value"?"selected":""}>Value: high to low</option><option value="valuelo" ${gsort==="valuelo"?"selected":""}>Value: low to high</option></select>
       <select id="gstat" aria-label="Status"><option value="">Any status</option>${[["vault","In your garage"],["sale","For sale"],["trade","For trade"],["pending","Trade pending"]].map(([k,l])=>{ const n=o.filter(c=>statusOf(c, uid)[k]).length; return n||gstat===k ? `<option value="${k}" ${gstat===k?"selected":""}>${l} (${n})</option>` : "" }).join("")}</select></div>
-    ${!o.length ? empty("Your garage is empty","Tap Scan a car and point your camera at the card to add your first car.") : !list.length ? empty("No matches","Try another search, line, brand or status.") : gview==="quick" ? quickList(list) : `<div class="grid">${list.map(garageCard).join("")}</div>`}
+    ${!o.length ? empty("Your garage is empty","Tap Scan a car and point your camera at the card to add your first car.") : !list.length ? empty("No matches","Try another search, line, brand or status.") : gview==="quick" ? quickList(list) : gview==="map" ? findsView(list) : `<div class="grid">${list.map(garageCard).join("")}</div>`}
     ${hasAccount() ? `<details class="gtools panel"><summary>Import, export &amp; backup</summary><div class="vaulttools">${downloads?`<button class="btn line sm" data-vexport="csv">Export garage (CSV)</button><button class="btn line sm" data-vexport="json">Export (JSON backup)</button><button class="btn line sm" data-vexport="template">CSV template</button>`:""}<label class="photo-in" style="flex-direction:row"><input type="file" accept=".csv,text/csv" id="f-import"><span class="btn line sm">${importing?`Importing ${importing}…`:"Import wishlist (CSV)"}</span></label><span class="small muted dropnote">or drop a .csv file here</span></div></details>` : ""}
   </div>`;
 }
@@ -3126,7 +3194,7 @@ function render(){
   if(keepForm) return;               // don't wipe a form someone is typing in; it re-renders on blur
   const pc = page==="profile" && (profilesDocs[viewing]||{}).color;
   if(pc && COLORS.some(([v])=>v===pc)) document.body.style.setProperty("--accent", `var(--${pc})`); else document.body.style.removeProperty("--accent");
-  $("#app").innerHTML = accessNote() + v(); paintMe(); paintFoot(); if(tray) renderTray(); if(page==="home") hxMount();
+  $("#app").innerHTML = accessNote() + v(); paintMe(); paintFoot(); if(tray) renderTray(); if(page==="home") hxMount(); if(page==="garage" && gview==="map") mountFinds();
   if(focus && document.getElementById(focus)){ const el=document.getElementById(focus); el.focus(); try{ el.setSelectionRange(sel,sel) }catch(e){} }
   const brands = new Set([...allKnown().map(c=>c.brand), ...cars.map(c=>c.brand)].filter(Boolean));
   $("#brandlist").innerHTML = [...brands].sort().map(b=>`<option value="${esc(b)}">`).join("");
@@ -3317,20 +3385,27 @@ function renderDetail(){
       <label class="c6" style="flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:14px"><input type="checkbox" id="e-error" ${c.error?"checked":""}> Factory error (wrong wheels, missing tampo, upside-down base…)</label>
       <label class="c6">What's the error?<input id="e-errnote" maxlength="80" value="${esc(c.errorNote||"")}" placeholder="Missing roof tampo"></label>
       <label>What you paid <span style="font-weight:500">(only you see this)</span><input id="e-paid" inputmode="decimal" maxlength="9" value="${+c.paid>0 ? esc(String(c.paid)) : ""}" placeholder="1.25"></label>
-      <label>Where you found it<input id="e-source" list="sourcelist" maxlength="40" value="${esc(c.source||"")}" placeholder="Walmart peg"><datalist id="sourcelist">${["Walmart","Target","Kroger","Dollar General","Walgreens","CVS","Mattel Creations","eBay","Flea market","Toy show","Trade","Gift"].map(x=>`<option value="${x}">`).join("")}</datalist></label>
+      <label>Store where you found it<input id="e-source" list="sourcelist" maxlength="40" value="${esc(c.source||"")}" placeholder="Walmart"><datalist id="sourcelist">${[...new Set([...own().map(x=>x.source).filter(Boolean), "Walmart","Target","Kroger","Dollar General","Walgreens","CVS","Mattel Creations","eBay","Flea market","Toy show","Trade","Gift"])].map(x=>`<option value="${esc(x)}">`).join("")}</datalist></label>
+      <label>Store city<input id="e-fcity" list="citylist" maxlength="60" value="${esc(c.foundCity||"")}" placeholder="Atlanta, GA"></label>
+      <label class="c6">Store address or branch <span style="font-weight:500">(only you see where you found it)</span><input id="e-faddr" maxlength="80" value="${esc(c.foundAddr||"")}" placeholder="1200 Main St, or Store #2051"></label>
+      <div class="c6 pinrow"><input type="hidden" id="e-flat" value="${hasNum(c.foundLat)?c.foundLat:""}"><input type="hidden" id="e-flng" value="${hasNum(c.foundLng)?c.foundLng:""}">
+        <button type="button" class="btn line sm" data-fpin="1">📍 ${hasNum(c.foundLat)?"Re-pin my location":"Pin my location"}</button>
+        <button type="button" class="btn line sm" data-fpinclear="1" ${hasNum(c.foundLat)?"":"hidden"}>Clear pin</button>
+        <span class="small muted" id="e-fpinmsg">${hasNum(c.foundLat) ? "Exact spot pinned." : "In the store right now? Pin it for an exact spot on your finds map."}</span></div>
       <label>Date you got it<input id="e-got" type="date" value="${esc(c.gotAt || (c.addedAt?localDate(new Date(c.addedAt)):""))}"></label>
       <label style="flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:14px;align-self:end;padding-bottom:10px"><input type="checkbox" id="e-chase" ${c.chase?"checked":""} ${c.status!=="want"?"disabled":""}> Chase car</label>
       <label class="c6">Storage location <span style="font-weight:500">(only you see this)</span><input id="e-loc" maxlength="60" value="${esc(c.location||"")}" placeholder="Bin B, Shelf 3"></label>
-      <label class="c6">Notes<textarea id="e-notes" maxlength="300" placeholder="Where you found it, what you paid…">${esc(c.notes||"")}</textarea></label>
+      <label class="c6">Notes<textarea id="e-notes" maxlength="300" placeholder="Anything else worth remembering…">${esc(c.notes||"")}</textarea></label>
       <div class="c6" style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn line" data-dmode="view">Cancel</button><button class="btn" type="submit">Save</button></div>
     </form>`;
   } else {
-    const facts = [["Brand", c.brand], ["Line", lineName(c.line)], ["Set", c.set || rel?.set], ["Card number", c.num || rel?.sub], ["Year", c.year || (relSet && (String(relSet.window).match(/(19|20)\d\d/)||[])[0])], ["Released", c.released || rel?.released], ["Condition", c.cond], ["Grade", c.grade], ["Card", c.cardVar], ["Flaws", (c.flaws||[]).join(", ")], ["Wheels", c.wheels], ["Made in", c.madeIn], ["Factory error", c.error ? (c.errorNote || "Yes") : ""], ["Found at", mineCar ? (c.source||"") : ""], ["You paid", mineCar && +c.paid>0 ? money(+c.paid) + (carValue(c) ? ` · ${roiText(carValue(c), +c.paid)}` : "") : ""], ["Got it", c.gotAt ? fmt(c.gotAt) : c.addedAt ? fmt(c.addedAt) : ""], ["Maker", makerOf(c)!=="Hot Wheels" ? makerOf(c) : ""], ["Scale", "1:64"], ["Stored at", mineCar ? (c.location||"") : ""],
+    const facts = [["Brand", c.brand], ["Line", lineName(c.line)], ["Set", c.set || rel?.set], ["Card number", c.num || rel?.sub], ["Year", c.year || (relSet && (String(relSet.window).match(/(19|20)\d\d/)||[])[0])], ["Released", c.released || rel?.released], ["Condition", c.cond], ["Grade", c.grade], ["Card", c.cardVar], ["Flaws", (c.flaws||[]).join(", ")], ["Wheels", c.wheels], ["Made in", c.madeIn], ["Factory error", c.error ? (c.errorNote || "Yes") : ""], ["Found at", mineCar ? foundText(c) : ""], ["You paid", mineCar && +c.paid>0 ? money(+c.paid) + (carValue(c) ? ` · ${roiText(carValue(c), +c.paid)}` : "") : ""], ["Got it", c.gotAt ? fmt(c.gotAt) : c.addedAt ? fmt(c.addedAt) : ""], ["Maker", makerOf(c)!=="Hot Wheels" ? makerOf(c) : ""], ["Scale", "1:64"], ["Stored at", mineCar ? (c.location||"") : ""],
 ].filter(([,v])=>v);
     const vi = valueInfo(c), mk = marketFor(c);
     body = `${huntBadge(c)}
       <h2>${esc(c.name)}</h2>
       <dl class="facts">${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
+      ${mineCar && foundPt(c) ? `<div><div class="minimap" id="minimap" role="region" aria-label="Map of where you found this car"><div class="map-msg">Loading map…</div></div><p class="small" style="margin:6px 0 0"><a href="${esc(mapsUrl(c))}" target="_blank" rel="noopener">Open in Maps ↗</a></p></div>` : ""}
       <div class="mkt"><span class="eyebrow">Real-world value</span>${vi ? `<b>${money(vi.value)}</b>${vi.low && vi.high && vi.high>vi.low ? `<span class="small">Usually ${money(vi.low)}–${money(vi.high)}</span>`:""}<span class="small muted">${esc(valueNote(vi))}${vi.source?` · <a href="${esc(vi.source)}" target="_blank" rel="noopener">${esc(vi.sourceName||"source")}</a>`:""}</span>` : `${(()=>{ const t = typicalValue(c); return `<b>~${money(t.value)}</b><span class="small">Typical for ${esc(c.chase && !["STH","TH","RLC"].includes(c.line) ? "a chase car" : lineName(c.line||"Mainline"))}: ${money(t.low)}–${money(t.high)}</span>` })()}<span class="small muted">No exact price for this car yet. Checked prices are added every month.${mineCar && sample ? ` <button class="link" data-valueone="${mineCar.id}">Estimate it now</button>`:""}</span>`}${mk && vi && vi.src!=="site" ? `<span class="small muted">On 1:64 Garage: ${money(mk.value)} (${mk.basis==="sold"?`${mk.n} sale${mk.n>1?"s":""}`:"asking"})</span>`:""}</div>
       ${c.notes?`<p style="margin:0">${esc(c.notes)}</p>`:""}
       ${owner!=="__db" && !isWant ? statusBadges(c, owner) : ""}
@@ -3358,6 +3433,7 @@ function renderDetail(){
     <div class="sheet-photo">${photo?`<img alt="${esc(c.name)}" src="${photo}">`:silhouette(c.name, c.brand)}</div>
     <div class="sheet-body">${body}</div></div>`;
   $("#sheet").hidden=false; document.body.style.overflow="hidden";
+  if(mineCar && document.getElementById("minimap")) drawMap(document.getElementById("minimap"), storeGroups([mineCar]), {zoom: hasNum(mineCar.foundLat) ? 15 : 11});
 }
 
 /* ---------- photo cropper ---------- */
@@ -3432,6 +3508,15 @@ document.addEventListener("click", async e=>{
   if(b.dataset.rmhaul){ const [by, pid, who, rid] = b.dataset.rmhaul.split("|"); try{ const items = ((postsDocs[by]||{}).items||[]).filter(x=>x.id!==pid); await db.doc("posts/"+by).set({items}); db.doc(`posts/${by}/photos/${pid}`).delete().catch(()=>{});
       const rd = allReports[who]||{}; await db.doc("reports/"+who).set({...rd, items:(rd.items||[]).map(x=>x.id===rid?{...x, status:"resolved"}:x)}); toast("Post removed") }catch(e){ dbErr(e) } return }
   if(b.dataset.gview){ gview = b.dataset.gview; render(); return }
+  if(b.dataset.fpin){ const msg = $("#e-fpinmsg");
+    if(!navigator.geolocation){ msg.textContent = "This device can't share its location."; return }
+    msg.textContent = "Finding you…";
+    navigator.geolocation.getCurrentPosition(p => { const la = +p.coords.latitude.toFixed(5), lo = +p.coords.longitude.toFixed(5);
+      $("#e-flat").value = la; $("#e-flng").value = lo; if(!$("#e-fcity").value.trim()) $("#e-fcity").value = nearestCity(la, lo);
+      msg.textContent = "Exact spot pinned. Tap Save to keep it."; document.querySelector("[data-fpinclear]")?.removeAttribute("hidden") },
+      () => { msg.textContent = "Couldn't get your location. Check that location is allowed for this site." }, {enableHighAccuracy:true, timeout:15000});
+    return }
+  if(b.dataset.fpinclear){ $("#e-flat").value = ""; $("#e-flng").value = ""; b.hidden = true; $("#e-fpinmsg").textContent = "Pin cleared. The store's city is used instead. Tap Save to keep it."; return }
   if(b.dataset.qcond){ const [id, v] = b.dataset.qcond.split("|"), c = cars.find(x=>x.id===id); if(!c) return; const loose = /^loose/i.test(c.cond||""); if((v==="Loose") === loose) return; await save({...c, cond: v}); return }
   if(b.dataset.qtrade){ const c = cars.find(x=>x.id===b.dataset.qtrade); if(!c) return; await save({...c, trade: !c.trade}); return }
   if(b.dataset.listimg){ await listImage(); return }
@@ -3615,7 +3700,7 @@ document.addEventListener("submit", async e=>{
   if(f.id==="carform"){
     const c = cars.find(x=>x.id===detail?.car.id); if(!c) return;
     await save({...c, name:$("#e-name").value.trim()||c.name, brand:$("#e-brand").value.trim(), line:$("#e-line").value, set:$("#e-set").value.trim(), year:$("#e-year").value.trim(), num:$("#e-num").value.trim(), cond:$("#e-cond").value, gotAt:$("#e-got").value, chase:$("#e-chase").checked, notes:$("#e-notes").value.trim(), location:$("#e-loc").value.trim(),
-      grade:$("#e-grade").value, cardVar:$("#e-cardvar").value, flaws:[...document.querySelectorAll("#carform [data-flaw]:checked")].map(x=>x.dataset.flaw), wheels:$("#e-wheels").value.trim(), source:$("#e-source").value.trim(), paid: paidVal($("#e-paid").value), madeIn:$("#e-madein").value, error:$("#e-error").checked, errorNote:$("#e-errnote").value.trim()});
+      grade:$("#e-grade").value, cardVar:$("#e-cardvar").value, flaws:[...document.querySelectorAll("#carform [data-flaw]:checked")].map(x=>x.dataset.flaw), wheels:$("#e-wheels").value.trim(), source:$("#e-source").value.trim(), foundAddr:$("#e-faddr").value.trim(), foundCity: areaKey($("#e-fcity").value) || $("#e-fcity").value.trim(), foundLat: $("#e-flat").value==="" ? null : +$("#e-flat").value, foundLng: $("#e-flng").value==="" ? null : +$("#e-flng").value, paid: paidVal($("#e-paid").value), madeIn:$("#e-madein").value, error:$("#e-error").checked, errorNote:$("#e-errnote").value.trim()});
     detail.mode="view"; renderDetail(); toast("Details saved"); return }
   if(f.id==="profform"){
     const d={ nick:$("#p-nick").value.trim(), city:areaKey($("#p-city").value) || $("#p-city").value.trim(), bio:$("#p-bio").value.trim(), fav:$("#p-fav").value.trim(), social:$("#p-social").value.trim(), color:(document.querySelector('input[name="p-color"]:checked')||{}).value||"steel", avatar:profEdit?.avatar||"", public:$("#p-pub").checked };
