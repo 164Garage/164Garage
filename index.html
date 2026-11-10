@@ -2112,14 +2112,16 @@ function vDrops(){
 }
 
 /* ---------- newsletter & socials ---------- */
-const SOCIALS = [["instagram","Instagram","https://instagram.com/"],["tiktok","TikTok","https://tiktok.com/@"],["youtube","YouTube","https://youtube.com/@"],["facebook","Facebook","https://facebook.com/"],["x","X","https://x.com/"],["discord","Discord",""],["website","Website",""]];
+const SOCIALS = [["instagram","Instagram","https://instagram.com/"],["tiktok","TikTok","https://tiktok.com/@"],["youtube","YouTube","https://youtube.com/@"],["facebook","Facebook","https://facebook.com/"],["x","X","https://x.com/"],["discord","Discord",""],["website","Website",""],["email","Email",""]];
+const EMAIL_RE = /^[^@\s"'<>]+@[^@\s"'<>]+\.[a-z]{2,}$/i;
 function socialUrl(k, v){ v = String(v||"").trim(); if(!v) return "";
+  if(k==="email") return EMAIL_RE.test(v.replace(/^mailto:/i,"")) ? "mailto:"+v.replace(/^mailto:/i,"") : "";
   if(/^https:\/\/[^\s"'<>]+$/i.test(v)) return v; if(/^http:\/\/[^\s"'<>]+$/i.test(v)) return v.replace(/^http:/i,"https:");
   const d = SOCIALS.find(x=>x[0]===k), h = v.replace(/^@/,"");
   if(d && d[2] && /^[A-Za-z0-9._-]{1,60}$/.test(h)) return d[2]+h;
   if(/^[a-z0-9.-]+\.[a-z]{2,}(\/[^\s"'<>]*)?$/i.test(v)) return "https://"+v; return "" }
 function socialLinks(){ const so = siteConf.socials || {};
-  return SOCIALS.map(([k,l])=>{ const u = socialUrl(k, so[k]); return u ? `<a class="soc" href="${esc(u)}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>${esc(l)}</a>` : "" }).join("") }
+  return SOCIALS.map(([k,l])=>{ const u = socialUrl(k, so[k]); if(u && k==="email") return `<a class="soc" href="${esc(u)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4zM4 7l8 6 8-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>${esc(u.slice(7))}</a>`; return u ? `<a class="soc" href="${esc(u)}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>${esc(l)}</a>` : "" }).join("") }
 const freqName = f => f==="monthly" ? "monthly" : "weekly";
 function newsControls(fid){
   if(mySub){ const other = mySub.freq==="monthly" ? "weekly" : "monthly";
@@ -2130,7 +2132,7 @@ function paintFoot(){ const el = document.getElementById("footx"); if(!el) retur
   if(el.contains(document.activeElement) && /INPUT|SELECT/.test(document.activeElement.tagName)) return;
   const soc = socialLinks();
   const news = page==="home" && hasAccount() ? "" : `<div class="fx-news"><b>${mySub ? "You're on the newsletter" : "The 1:64 Garage newsletter"}</b><span>New drops, chase finds and price moves. Weekly or monthly, your pick.</span>${newsControls("newsform")}</div>`;
-  const socB = soc ? `<div class="fx-soc"><b>Follow 1:64 Garage</b><div class="socs">${soc}</div></div>`
+  const socB = soc ? `<div class="fx-soc"><b>Follow &amp; contact 1:64 Garage</b><div class="socs">${soc}</div></div>`
     : (window.__isOwner || canEdit) ? `<div class="fx-soc"><b>Your socials</b><span>Add your links on the <button class="link" data-go="business">Business page</button> and they show here.</span></div>` : "";
   const html = news || socB ? `<div class="footx">${news}${socB}</div>` : "";
   if(el._h !== html){ el._h = html; el.innerHTML = html } }
@@ -2731,6 +2733,7 @@ function vAbout(){
       <p>Release lists come from collector sources like Orange Track Diecast, 164custom and case reports, linked on every set. Prices come from recent online sales and listings, checked regularly. Collectors can add cars too; Claude checks each one first.</p>
       <h3>Independent</h3>
       <p>1:64 Garage is run by a collector. It isn't affiliated with or endorsed by Mattel, Hot Wheels, Matchbox, Mini GT, Majorette or any car maker. Brand and car names are used only to identify the products.</p>
+      ${socialUrl("email", (siteConf.socials||{}).email) ? `<h3>Contact</h3><p>Questions, a wrong car, or want to work together? Email <a href="${esc(socialUrl("email", siteConf.socials.email))}">${esc(socialUrl("email", siteConf.socials.email).slice(7))}</a>.</p>` : ""}
       <p><button class="btn line sm" data-tour="1">Take the tour</button> <button class="btn line sm" data-go="terms">Terms &amp; rules</button></p>
     </section></div>`;
 }
