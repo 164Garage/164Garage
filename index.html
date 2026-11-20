@@ -3663,6 +3663,7 @@ function trayPump(){
         if(parts){ const i = tray.items.indexOf(it); if(i >= 0) tray.items.splice(i, 1, ...parts); toast(`Found ${parts.length} cards in that photo. Reading each one.`); renderTray(); trayPump(); return } }
       const out = it.kind==="check" ? await checkRead(it.photo) : await aiRead({name:"", set:"", year:"", cond:"Carded", chase:false, photo:it.photo});
       if(out.photo) it.photo = out.photo; it.res = out.res; it.status = out.res.found ? "ready" : "nomatch"; if(out.res.loose) it.cond = "Loose";
+      if(it.status==="ready" && uid && trayHave(it.res)) await lookCompare(it);
       if(it.status==="ready" && uid && (trayHave(it.res) || trayCousin(it.res))) dupeAlert(it);
       if(it.kind==="scan" && it.res.found && !it.res.checked){ const vi = mvals[vkey({...it.res, name:it.res.relName||it.res.name})]; if(vi && +vi.value>0){ it.res.value = +vi.value; it.res.checked = true } }
     }catch(e){ if(e && ["not_granted","sampling_disabled","not_declared","capability_disabled","capability_removed"].includes(e.code)) sample = null; it.status = "err"; it.err = scanErrMsg(e) }
@@ -3682,7 +3683,18 @@ async function traySplit(it){
   if(boxes.length < 2){ it.photo = await small(); return null }
   const parts = []; for(const b of boxes.slice(0,16)){ try{ parts.push({id:newId(), kind:it.kind, photo:await cropToBox(it.photo, b, max), status:"wait", cond:"Carded", split:true}) }catch(e){} }
   return parts.length > 1 ? parts : (it.photo = await small(), null) }
-const trayHave = r => r.forceNew ? null : own().find(c=>sameRelease(c, r));
+/* the edition written in brackets in a name, e.g. "Nissan Skyline GT-R (7-Eleven)" -> "7 eleven" */
+const editionOf = c => { const m = String((c && c.name) || "").match(/\(([^)]+)\)\s*$/); return m ? norm(m[1]) : "" };
+/* something printed on both cards actually agrees (codes, series or number), not just "nothing disagrees" */
+function cardEvidence(a, b){
+  const ta = normCode(a.toy), tb = normCode(b.toy); if(ta && tb) return ta===tb;
+  const ea = editionOf(a), eb = editionOf(b), txt = c => norm([c.name, c.set, c.cardVar].join(" "));
+  if(ea && !txt(b).includes(ea)) return false; if(eb && !txt(a).includes(eb)) return false;
+  return !!((normCode(a.asst) && normCode(b.asst)) || (normSet(a.set) && normSet(b.set)) || (normNum(a.num||a.sub) && normNum(b.num||b.sub)));
+}
+/* the same card in your garage: same casting, nothing on the card disagrees, something agrees,
+   the photos don't look like different packaging, and you haven't said "this is a different card" */
+const trayHave = r => r.forceNew ? null : own().find(c=>sameRelease(c, r) && cardEvidence(c, r) && !(r.notSame||[]).includes(c.id));
 /* same casting and tier, but the card reads as a different release */
 const trayCousin = r => r.forceNew || trayHave(r) ? null : own().find(c=>sameCar(c, r));
 /* what the scanner read off the packaging, shown under the car so you can check it against the card */
@@ -3712,9 +3724,9 @@ function trayCard(it){
     ${r.loose ? looseBox(it) : ""}
     ${r.confidence==="low" ? `<small class="muted">Not sure about this one. Double-check the card.</small>` : ""}
     ${releaseNote(r, have)}
-    ${have ? `<span class="tag">This card is already in your garage</span>` : trayCousin(r) ? `<span class="tag">You have this car on another card</span>` : wish ? `<span class="tag acc">On your wishlist</span>` : ""}
+    ${have ? `<span class="tag">This card is already in your garage</span>` : trayCousin(r) ? `<span class="tag">You have this car on another card${r.lookWhy ? ": "+esc(r.lookWhy) : ""}</span>` : wish ? `<span class="tag acc">On your wishlist</span>` : ""}
     ${!have && hasAccount() ? trayPaid(it) + trayBuy(it) : ""}
-    <div class="tr-acts">${acts}${have && hasAccount() ? `<button class="btn line sm" data-trnew="${it.id}">Different release? Add it</button>` : ""}</div></div>${x}</div>`;
+    <div class="tr-acts">${acts}${have && hasAccount() ? `<button class="btn line sm" data-trnew="${it.id}">It's a different card, add it</button>` : ""}</div></div>${x}</div>`;
 }
 document.addEventListener("click", async e=>{ const b = e.target.closest && e.target.closest("[data-namefix]"); if(!b) return; const c = cars.find(x=>x.id===b.dataset.namefix); const fx = c && cardNameFix(c); if(!fx) return;
   const old = c.name; await save({...c, name:fx.name, cast:fx.name, year:c.year||fx.year, toy:c.toy||fx.toy}); toast(`Renamed ${old} to ${fx.name}`); if(detail){ detail.car = cars.find(x=>x.id===c.id) || detail.car; renderDetail() } });
@@ -3766,11 +3778,18 @@ async function trayAddOne(it){
   if(!it || it.status!=="ready" || needAccount()) return false;
   if(!hasPrice(it.buy)){ it.needPaid = true; return false }
   it.needPaid = false; const r = it.res;
-  await addCar({name:r.name, brand:r.brand, maker:r.maker, line:r.line, set:r.set, year:r.year, num:r.num, toy:r.toy, asst:r.asst, cardVar:r.cardVar, chase:!!r.chase, cond:it.cond||"Carded", photo:it.photo, color:r.color||"", aiValue: r.checked ? 0 : (r.value||0), buy:it.buy}, it.kind==="scan" ? true : r.confidence==="high", !!r.forceNew);
+  await addCar({name:r.name, brand:r.brand, maker:r.maker, line:r.line, set:r.set, year:r.year, num:r.num, toy:r.toy, asst:r.asst, cardVar:r.cardVar, chase:!!r.chase, cond:it.cond||"Carded", photo:it.photo, notSame:r.notSame||[], color:r.color||"", aiValue: r.checked ? 0 : (r.value||0), buy:it.buy}, it.kind==="scan" ? true : r.confidence==="high", !!r.forceNew);
   it.status = "added"; return true;
 }
 document.addEventListener("change", async e=>{ const t = e.target; if(t.dataset && t.dataset.qpaid){ const c = cars.find(x=>x.id===t.dataset.qpaid); if(!c) return; const v = paidVal(t.value); if(v !== (+c.paid||0)){ await save({...c, paid:v, paidAuto:false}); toast(v ? `Saved: paid ${money(v)}` : "Purchase price removed") } return } }); 
 document.addEventListener("keydown", e=>{ if(e.key==="Enter" && e.target.dataset && e.target.dataset.qpaid) e.target.blur() });
+/* before saying "already in your garage", put the two card photos side by side: the same casting on
+   a different card (7-Eleven vs Neon Speeders, 2019 vs 2024 card art) is a different car for a collector */
+async function lookCompare(it){
+  const r = it.res; for(let i=0; i<3; i++){ const c = trayHave(r); if(!c) return; const a = safeImg(c.photo), b = safeImg(it.photo); if(!a || !b || !sample) return;
+    try{ const v = await sample.json(`Two photos of 1:64 diecast cars in their packaging. Photo 1 is a card a collector already owns; photo 2 is a new scan. Collectors treat the same casting on a different card as a different car: different series or edition (store exclusives like 7-Eleven, Target, Walmart, Neon Speeders, Silver Series), different year of card art, different card number, different car color or tampos. Ignore lighting, angle, glare, background and wear. Are these the SAME release on the SAME card design? Reply with only one JSON object: {"same": true or false, "confidence": "high" or "medium" or "low", "why": "a few words on what differs or matches"}`, {modelTier:"quick", images:[dataUrlBlob(a), dataUrlBlob(b)]});
+      if(v && v.same===false && v.confidence!=="low"){ (r.notSame ??= []).push(c.id); r.lookWhy = String(v.why||"").slice(0,80); continue } }catch(e){ if(e && e.code==="cancelled") throw e }
+    return } }
 /* "Already in your garage": a pop-up the moment a scan matches a car you own, so nobody buys the same card twice */
 const dupeQ = [];
 function dupeAlert(it){ if(it.dupeShown) return; it.dupeShown = true; dupeQ.push(it.id); showDupe() }
@@ -3786,14 +3805,13 @@ function showDupe(){
     <p class="dupe-name"><b>${esc(have.name)}</b>${have.set ? `<small>${esc(have.set)}${have.num ? " · "+esc(have.num) : ""}</small>` : ""}</p>
     ${scan || mine ? `<div class="dupe-ph">${scan ? `<figure><img alt="" src="${scan}"><figcaption>Your scan</figcaption></figure>` : ""}${mine ? `<figure><img alt="" src="${mine}"><figcaption>In your garage</figcaption></figure>` : ""}</div>` : ""}
     <p class="small muted" style="margin:0">${when ? `You added it ${esc(fmtDay(when))}. ` : ""}${!exact ? "Same car, but this card's series or number looks different. Add it if it's a new card for you." : it.kind==="check" ? "No need to buy it again, unless you want a spare." : "Scanning it again won't add a second copy."}</p>
-    <div class="dupe-acts"><button class="btn" data-dupe="ok|${it.id}">Got it</button><button class="btn line" data-dupe="remove|${it.id}">Remove this scan</button></div>
-    ${exact ? `<button class="link small" data-dupe="new|${it.id}">It's a different release? Add it anyway</button>` : ""}</div>`;
+    <div class="dupe-acts"><button class="btn" data-dupe="ok|${it.id}">${exact ? "Same card, got it" : "Got it"}</button>${exact ? `<button class="btn line" data-dupe="new|${it.id}">It's a different card</button>` : ""}<button class="btn line" data-dupe="remove|${it.id}">Remove this scan</button></div></div>`;
   document.body.appendChild(el); el.querySelector("[data-dupe]")?.focus();
 }
 document.addEventListener("click", e=>{ const b = e.target.closest && e.target.closest("[data-dupe]"); if(!b){ if(e.target.id==="dupe") closeDupe(); return }
   const [a, id] = b.dataset.dupe.split("|"), it = trayItem(id);
   if(a==="remove" && tray){ tray.items = tray.items.filter(x=>x.id!==id); renderTray(); toast("Scan removed") }
-  if(a==="new" && it && it.res){ it.res.forceNew = true; it.res.relName = releaseName(it.res, true); renderTray(); toast(`Will add as ${it.res.relName}. Enter what you paid.`) }
+  if(a==="new" && it && it.res){ const h = trayHave(it.res); if(h) (it.res.notSame ??= []).push(h.id); it.res.forceNew = true; it.res.relName = releaseName(it.res, true); renderTray(); toast(`Will add as ${it.res.relName}. Enter what you paid.`) }
   closeDupe() });
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && document.getElementById("dupe")){ e.stopPropagation(); closeDupe() } }, true);
 function trayFocusPaid(it){ if(!it) return; const f = document.getElementById("trp-"+it.id); if(f){ f.scrollIntoView({block:"center", behavior:"smooth"}); try{ f.focus({preventScroll:true}) }catch(e){} } }
@@ -3869,7 +3887,7 @@ async function addCar(d, verified, forceNew){
   const wm = forceNew ? null : wantMatch(d);
   if(wm){ await save({...wm, ...(d.aiValue>0 ? {aiValue:d.aiValue, aiValueAt:localDate()} : {}), name: wm.name || d.name, ...(norm(cast)!==norm(wm.name) ? {cast} : {}), brand: d.brand || wm.brand || "", line: d.line || wm.line, set: d.set || wm.set || "", year: d.year || wm.year || "", num: d.num || wm.num || "", ...pkgOf(d), chase: !!(d.chase || wm.chase), cond: d.cond || "Carded", status:"own", notify:false, verified: !!verified || !!wm.verified, addedAt: Date.now(), gotAt: localDate(), ...(d.photo ? {photo:d.photo} : {}), ...buyRecord(d.buy, d.line || wm.line, d.maker || wm.maker)});
     toast(`Found it! ${wm.name || d.name} moved from your wishlist to your garage.`); ai = null; addPhoto = ""; render(); return }
-  const ex = forceNew ? null : own().find(c=>sameRelease(c, {...d, name:cast}));
+  const ex = forceNew ? null : own().find(c=>sameRelease(c, {...d, name:cast}) && cardEvidence(c, d) && !(d.notSame||[]).includes(c.id));
   if(ex){ if(d.photo && !ex.photo) await save({...ex, photo:d.photo}); toast(`This ${ex.name} card is already in your garage`); ai = null; addPhoto = ""; render(); return }
   const name = releaseName({...d, name:cast}, !!forceNew);
   await save({id:newId(), ...(d.aiValue>0 ? {aiValue:d.aiValue, aiValueAt:localDate()} : {}), name, ...(norm(name)!==norm(cast) ? {cast} : {}), brand:canonBrand(d.brand), ...(d.maker && d.maker!=="Hot Wheels" ? {maker:d.maker} : {}), line:d.line||"Mainline", set:d.set||"", year:d.year||"", num:d.num||"", ...pkgOf(d), chase:!!d.chase, cond:d.cond||"Carded", status:"own", verified:!!verified, addedAt:Date.now(), gotAt:localDate(), ...(d.photo?{photo:d.photo}:{}), ...(d.color?{color:String(d.color).slice(0,40)}:{}), ...buyRecord(d.buy, d.line||"Mainline", d.maker)});
