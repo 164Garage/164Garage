@@ -165,6 +165,7 @@
     async me(){
       const s = await session(); if(!s) return {id: null};
       const u = s.user, md = u.user_metadata || {};
+      if(md.username) window.__signupName = md.username;
       const {data: adm} = await sb.from("admins").select("user_id").eq("user_id", u.id).maybeSingle();
       const isAdmin = !!adm;
       return {id: u.id, name: md.full_name || md.name || "", avatarUrl: md.avatar_url || md.picture || AVATAR, canEdit: isAdmin, isOwner: isAdmin};
@@ -181,11 +182,29 @@
   // reload once when someone logs in or out in this tab or another one
   let lastUid;
   sb.auth.onAuthStateChange((ev, s) => {
+    if(ev === "PASSWORD_RECOVERY") try{ sessionStorage.setItem("setpw", "1") }catch(e){}
     const id = s?.user?.id || null;
     if(lastUid === undefined){ lastUid = id; return }
     if(id !== lastUid){ lastUid = id; location.reload() }
   });
+  const authErr = (code, msg) => Object.assign(new Error(msg || code), {code});
   window.__auth = {
+    // username (or email) + password
+    async logIn(who, pass){
+      const {data: email, error} = await sb.rpc("login_email", {who, pass});
+      if(error) throw authErr(/too_many/.test(error.message) ? "too_many" : "failed");
+      if(!email) throw authErr("wrong");
+      const {error: e2} = await sb.auth.signInWithPassword({email, password: pass});
+      if(e2) throw authErr(/confirm/i.test(e2.message) ? "unconfirmed" : /rate|too many/i.test(e2.message) ? "too_many" : "wrong");
+    },
+    async usernameFree(u){ const {data} = await sb.rpc("username_free", {u}); return data !== false },
+    async signUp(email, pass, username){
+      const {data, error} = await sb.auth.signUp({email, password: pass, options: {emailRedirectTo: location.origin + "/", data: {username}}});
+      if(error) throw authErr(/registered|exists/i.test(error.message) ? "exists" : /password/i.test(error.message) ? "weak" : /rate|seconds/i.test(error.message) ? "too_many" : "failed", error.message);
+      return {needsConfirm: !data.session};
+    },
+    async setPassword(p){ const {error} = await sb.auth.updateUser({password: p}); if(error) throw authErr(/different|same/i.test(error.message) ? "same" : "failed", error.message) },
+    async resetPassword(email){ const {error} = await sb.auth.resetPasswordForEmail(email, {redirectTo: location.origin + "/"}); if(error) throw authErr(/rate|seconds/i.test(error.message) ? "too_many" : "failed") },
     async emailLink(email){
       const {error} = await sb.auth.signInWithOtp({email, options: {emailRedirectTo: location.origin + "/"}});
       if(error) throw error;

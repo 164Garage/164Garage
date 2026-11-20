@@ -1545,7 +1545,7 @@ function ebayUrl(c, sold){
 }
 let listings = [], lphotos = {}, mq = "", mline = "", mbrand = "", msort = "new", sell = null, myArea = "";
 try{ myArea = localStorage.getItem("area") || "" }catch(e){}
-let db=null, user=null, uid=null, col=null, canEdit=false, signedIn=false, guestView=false, signedOut=false, meChecked=false, loginMsg="";
+let authTab="login", db=null, user=null, uid=null, col=null, canEdit=false, signedIn=false, guestView=false, signedOut=false, meChecked=false, loginMsg="";
 let ps = {};                                   // resolved people
 let lineFilter = "", brandSel = "", editProfile = false, dmaker = "";
 
@@ -2951,6 +2951,7 @@ function vCollectors(){
    Logging in happens with the visitor's Claude account, which the site recognises on every visit.
    A username then finds the 1:64 Garage account that belongs to that login. */
 /* remember who last logged in on this browser, so coming back is one tap */
+function pwPrompt(){ try{ return sessionStorage.getItem("setpw")==="1" }catch(e){ return false } }
 function remembered(){ try{ return JSON.parse(localStorage.getItem("lastUser")||"null") }catch(e){ return null } }
 function rememberMe(){
   if(!uid || !hasAccount()) return;
@@ -2967,15 +2968,30 @@ function vLogin(){
     body = `<div class="panel loginbox">
       ${rm ? `<div class="who"><span class="eyebrow">Saved on this device</span><h2>${esc(rm.n||"")}</h2>${rm.u?`<small class="uname">@${esc(rm.u)}</small>`:""}</div>
       <p class="muted">Log in to pick up right where you left off. Your garage, wishlist and listings are all saved.</p>`
-      : `<h2>Log in or sign up</h2>
-      <p class="muted">It's free. Enter your email and we'll send you a link: tap it and you're in. No password to remember.</p>`}
-      <form class="form" id="emailform" autocomplete="on">
-        <label class="c6">Email<input id="l-email" type="email" required autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com"></label>
-        <div class="c6"><button class="btn" type="submit">Email me a log-in link</button></div>
+      : `<h2>${authTab==="signup"?"Create your account":authTab==="forgot"?"Reset your password":"Log in"}</h2>
+      <p class="muted">${authTab==="signup"?"It's free. You stay logged in on this device until you log out.":authTab==="forgot"?"Enter your email and we'll send a link. Tap it, then pick a new password.":"Use your username (or email) and password. You stay logged in until you log out."}</p>`}
+      ${authTab==="signup" ? `<form class="form" id="signupform" autocomplete="on">
+        <label class="c6">Username<span class="uin"><i>@</i><input id="su-user" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_.]{3,20}" autocapitalize="none" autocomplete="username" spellcheck="false" placeholder="aidan164" title="3–20 letters, numbers, _ or ."></span></label>
+        <label class="c6">Email <span style="font-weight:500">(private, for password resets)</span><input id="su-email" type="email" required autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com"></label>
+        <label class="c6">Password <span style="font-weight:500">(8+ characters)</span><input id="su-pass" type="password" required minlength="8" autocomplete="new-password"></label>
+        <div class="c6"><button class="btn" type="submit">Create account</button></div>
       </form>
       ${loginMsg?`<p class="loginmsg">${loginMsg}</p>`:""}
+      <p class="small muted">Already have an account? <button class="link" data-authtab="login">Log in</button></p>`
+      : authTab==="forgot" ? `<form class="form" id="forgotform" autocomplete="on">
+        <label class="c6">Email<input id="fp-email" type="email" required autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com"></label>
+        <div class="c6"><button class="btn" type="submit">Email me a reset link</button></div>
+      </form>
+      ${loginMsg?`<p class="loginmsg">${loginMsg}</p>`:""}
+      <p class="small muted"><button class="link" data-authtab="login">Back to log in</button></p>`
+      : `<form class="form" id="pwloginform" autocomplete="on">
+        <label class="c6">Username or email<input id="l-who" required autocapitalize="none" autocomplete="username" spellcheck="false" placeholder="aidan164" value="${esc(rm?.u||"")}"></label>
+        <label class="c6">Password<input id="l-pass" type="password" required autocomplete="current-password"></label>
+        <div class="c6"><button class="btn" type="submit">Log in</button></div>
+      </form>
+      ${loginMsg?`<p class="loginmsg">${loginMsg}</p>`:""}
+      <p class="small muted"><button class="link" data-authtab="forgot">Forgot password?</button> · New here? <button class="link" data-authtab="signup">Create an account</button></p>`}
       ${siteConf.google?`<p class="small muted" style="margin:6px 0">or</p><button class="btn line" data-google="1">Continue with Google</button>`:""}
-      <p class="small muted">Your email stays private. Collectors only see the display name you pick.</p>
       ${rm?`<p class="small muted">Not you? <button class="link" data-forget="1">Use a different account</button></p>`:""}
     </div>`;
   } else if(!uid){
@@ -2985,20 +3001,19 @@ function vLogin(){
     body = `<div class="panel loginbox">
       <div class="person big"><img alt="" src="${esc(avatarOf(uid))}"><div class="who"><span class="eyebrow">You're logged in</span><b>${esc(dispName(uid))}</b>${n?`<small class="uname">@${esc(n)}</small>`:""}</div></div>
       <div class="ctas"><button class="btn" data-go="myprofile">Go to my profile</button><button class="btn line" data-go="garage">My Garage</button></div>
+      <form class="form" id="pwsetform" autocomplete="on" style="margin-top:12px"><input type="text" autocomplete="username" value="${esc(uname(uid))}" hidden>
+        <label class="c6">${pwPrompt()?"Pick a new password":"Password"} <span style="font-weight:500">(8+ characters, so you can log in with @${esc(uname(uid)||"your username")})</span><input id="ps-pass" type="password" required minlength="8" autocomplete="new-password"></label>
+        <div class="c6"><button class="btn line sm" type="submit">${pwPrompt()?"Save new password":"Set or change password"}</button></div>
+      </form>
+      ${loginMsg?`<p class="loginmsg">${loginMsg}</p>`:""}
       <p class="small muted"><button class="link" data-logout="1">Log out</button></p>
       ${n?"":`<p class="small muted">Tip: add a username from <button class="link" data-go="myprofile">your profile</button> (tap Edit profile) so people can find you.</p>`}
     </div>`;
   } else {
     body = `<div class="panel loginbox">
-      <h2>Log in to your account</h2>
-      <form class="form" id="loginform" autocomplete="on">
-        <label class="c6">Username<span class="uin"><i>@</i><input id="l-user" required autocapitalize="none" autocomplete="username" spellcheck="false" placeholder="yourusername" value="${esc(rm?.u||"")}"></span></label>
-        <div class="c6"><button class="btn" type="submit">Log in</button></div>
-      </form>
-      ${loginMsg?`<p class="loginmsg">${loginMsg}</p>`:""}
-      <hr>
-      <p class="muted" style="margin:0">New to 1:64 Garage?</p>
-      <button class="btn line" data-go="myprofile">Create an account</button>
+      <h2>You're in. One more step</h2>
+      <p class="muted">Pick your display name and finish your profile to start your garage.</p>
+      <button class="btn" data-go="myprofile">Finish my account</button>
       <p class="small muted"><button class="link" data-logout="1">Log out</button></p>
     </div>`;
   }
@@ -3289,7 +3304,7 @@ function vProfile(){
     <form class="panel form" id="profform">
       <div class="c6 avatar-edit"><img alt="" src="${esc(safeImg(profEdit.avatar) || r.avatarUrl || BLANK)}" id="p-avatar-prev">
         <div style="display:flex;flex-direction:column;gap:6px"><b>Profile picture</b><div style="display:flex;gap:8px;flex-wrap:wrap"><label class="photo-in" style="flex-direction:row"><input type="file" accept="image/*" id="p-avatar"><span class="btn line sm">Upload photo</span></label>${profEdit.avatar?`<button type="button" class="btn line sm" data-avatar-clear="1">Use my account photo</button>`:""}</div></div></div>
-      <label class="c3 sm-full">Username <span style="font-weight:500">(required)</span><span class="uin"><i>@</i><input id="p-user" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_.]{3,20}" autocapitalize="none" autocomplete="username" spellcheck="false" value="${esc(p.username||"")}" placeholder="aidan164" title="3–20 letters, numbers, _ or ."></span></label>
+      <label class="c3 sm-full">Username <span style="font-weight:500">(required)</span><span class="uin"><i>@</i><input id="p-user" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_.]{3,20}" autocapitalize="none" autocomplete="username" spellcheck="false" value="${esc(p.username||window.__signupName||"")}" placeholder="aidan164" title="3–20 letters, numbers, _ or ."></span></label>
       <label class="c3 sm-full">Display name <span style="font-weight:500">(required)</span><input id="p-nick" required minlength="2" maxlength="30" value="${esc(p.nick||"")}" placeholder="${esc(r.name||"Your name")}"></label>
       <label class="c3 sm-full">Nearest city <span style="font-weight:500">(for shipping distance)</span><input id="p-city" maxlength="40" list="citylist" value="${esc(p.city||"")}" placeholder="Atlanta, GA"></label>
       <label class="c6">Bio<textarea id="p-bio" maxlength="200" placeholder="Hunting Porsche chases and Japanese Car Culture.">${esc(p.bio||"")}</textarea></label>
@@ -3794,7 +3809,7 @@ function render(){
   if(typeof ggDrag!=="undefined" && ggDrag) return;   // never redraw under a prop someone is dragging
   const v = {showroom:vShowroom, check:vCheck, about:vAbout, terms:vTerms, business:vBusiness, trends:vTrends, login:vLogin, home:vHome, drops:vDrops, brands:vBrands, market:vMarket, collectors:vCollectors, profile:vProfile, garage:vGarage, want:vWant}[page] || vHome;
   const focus = document.activeElement && document.activeElement.id, sel = focus && document.activeElement.selectionStart;
-  const keepForm = ["addform","profform","carform","sellform","aiform","loginform","emailform","ggform","subform","newsform","socialform","reportform","rateform","offerform","counterform"].some(f=>document.getElementById(f)?.contains(document.activeElement));
+  const keepForm = ["addform","profform","carform","sellform","aiform","loginform","pwloginform","signupform","forgotform","pwsetform","ggform","subform","newsform","socialform","reportform","rateform","offerform","counterform"].some(f=>document.getElementById(f)?.contains(document.activeElement));
   if(keepForm) return;               // don't wipe a form someone is typing in; it re-renders on blur
   const pc = page==="profile" && (profilesDocs[viewing]||{}).color;
   if(pc && COLORS.some(([v])=>v===pc)) document.body.style.setProperty("--accent", `var(--${pc})`); else document.body.style.removeProperty("--accent");
@@ -4306,6 +4321,7 @@ document.addEventListener("click", async e=>{
   if(b.dataset.gotrade){ mtab = "trade"; go("market"); return }
   if(b.dataset.copytext){ const t = b.closest("details,div,section").querySelector("textarea"); try{ await navigator.clipboard.writeText(t.value); toast("List copied") }catch(err){ t.select(); toast("Selected. Press copy to finish.") } return }
   if(b.dataset.reload){ location.reload(); return }
+  if(b.dataset.authtab){ authTab = b.dataset.authtab; loginMsg = ""; render(); return }
   if(b.dataset.logout){ forgetMe(); window.__auth?.signOut(); return }
   if(b.dataset.google){ window.__auth?.google().catch(e=>toast(e.message||"Couldn't open Google")); return }
   if(b.dataset.tour){ showTour(0); return }
@@ -4443,11 +4459,36 @@ document.addEventListener("submit", async e=>{
   if(f.id==="socialform"){
     const so = {}; for(const [k,l] of SOCIALS){ const v = ($("#soc-"+k)||{}).value?.trim() || ""; if(v && !socialUrl(k, v)){ toast(`Check the ${l} link.`); return } if(v) so[k] = v.slice(0,120) }
     try{ await db.doc("releasePhotos/_site").set({...siteConf, socials: so, updatedAt: Date.now()}); siteConf = {...siteConf, socials: so}; render(); toast("Social links saved") }catch(err){ dbErr(err) } return }
-  if(f.id==="emailform"){
-    const em = $("#l-email").value.trim(); if(!em) return; document.activeElement.blur();
+  if(f.id==="pwloginform"){
+    const who = $("#l-who").value.trim(), pw = $("#l-pass").value; if(!who || !pw) return; document.activeElement.blur();
+    loginMsg = "Logging in…"; render();
+    try{ await window.__auth.logIn(who, pw); loginMsg = "" }
+    catch(err){ const c = err?.code;
+      loginMsg = c==="too_many" ? "Too many tries. Wait 15 minutes, or reset your password." : c==="unconfirmed" ? "Confirm your email first: tap the link we sent when you signed up." : c==="wrong" ? `That username and password don't match. <button class="link" data-authtab="forgot">Reset your password</button>` : "Couldn't log in right now. Try again in a minute." }
+    render(); return }
+  if(f.id==="signupform"){
+    const un = $("#su-user").value.trim().replace(/^@/,""), em = $("#su-email").value.trim(), pw = $("#su-pass").value; document.activeElement.blur();
+    if(!/^[A-Za-z0-9_.]{3,20}$/.test(un)){ loginMsg = "Usernames are 3–20 letters, numbers, _ or ."; render(); return }
+    if(pw.length < 8){ loginMsg = "Use at least 8 characters for your password."; render(); return }
+    loginMsg = "Creating your account…"; render();
+    try{
+      if(!(await window.__auth.usernameFree(un))){ loginMsg = `@${esc(un)} is taken. Try another username.`; render(); return }
+      const r = await window.__auth.signUp(em, pw, un);
+      loginMsg = r.needsConfirm ? `Almost done: check <b>${esc(em)}</b> and tap the link to confirm (look in spam too). After that you log in with @${esc(un)} and your password.` : "";
+    }catch(err){ const c = err?.code;
+      loginMsg = c==="exists" ? `There's already an account for that email. <button class="link" data-authtab="login">Log in</button> or <button class="link" data-authtab="forgot">reset your password</button>.` : c==="weak" ? "Pick a stronger password (8+ characters, mix letters and numbers)." : c==="too_many" ? "Too many tries. Wait a minute and try again." : "Couldn't create the account. Check the email and try again." }
+    render(); return }
+  if(f.id==="forgotform"){
+    const em = $("#fp-email").value.trim(); if(!em) return; document.activeElement.blur();
     loginMsg = "Sending…"; render();
-    try{ await window.__auth.emailLink(em); loginMsg = `Check <b>${esc(em)}</b> for your log-in link (look in spam too). Open it on this device.` }
-    catch(err){ loginMsg = /rate|seconds/i.test(err?.message||"") ? "Too many tries. Wait a minute, then send the link again." : "Couldn't send the link. Check the email address and try again." }
+    try{ await window.__auth.resetPassword(em); loginMsg = `If there's an account for <b>${esc(em)}</b>, a reset link is on its way (look in spam too). Open it on this device, then pick a new password.` }
+    catch(err){ loginMsg = err?.code==="too_many" ? "Too many tries. Wait a minute, then send it again." : "Couldn't send the link. Try again in a minute." }
+    render(); return }
+  if(f.id==="pwsetform"){
+    const pw = $("#ps-pass").value; document.activeElement.blur();
+    if(pw.length < 8){ loginMsg = "Use at least 8 characters."; render(); return }
+    try{ await window.__auth.setPassword(pw); try{ sessionStorage.removeItem("setpw") }catch(e){}; loginMsg = ""; toast(`Password saved. Log in any time with @${uname(uid)||"your username"} and this password.`) }
+    catch(err){ loginMsg = err?.code==="same" ? "That's already your password." : "Couldn't save the password. Try again." }
     render(); return }
   if(f.id==="loginform"){
     const n = $("#l-user").value.trim().replace(/^@/,"").toLowerCase(); document.activeElement.blur();
@@ -4455,7 +4496,7 @@ document.addEventListener("submit", async e=>{
     if(!n) return;
     if(!hit) loginMsg = `There's no account named @${esc(n)} yet. Check the spelling, or create one below.`;
     else if(hit[0]===uid){ loginMsg=""; toast(`Welcome back, @${n}!`); go("myprofile"); return }
-    else loginMsg = `@${esc(n)} was made with a different login. Log out, then log back in with the email you used to sign up.`;
+    else loginMsg = `@${esc(n)} was made with a different login. Log out, then log back in with your username and password.`;
     render(); return }
   if(f.id==="addform") return;
   if(f.id==="addform"){
@@ -4510,7 +4551,7 @@ document.addEventListener("submit", async e=>{
 document.body.dataset.page = "home";
 try{ const p=localStorage.getItem("page"); if(p && p!=="profile") page=p }catch(e){}
 const h=location.hash.slice(1); if(["drops","brands","market","collectors","garage","want"].includes(h)) page=h;
-go(page);
+go(pwPrompt() ? "login" : page);
 
 (async()=>{
   const use = n => window.claude?.use ? window.claude.use(n).catch(()=>null) : Promise.resolve(null);

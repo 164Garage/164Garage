@@ -9,7 +9,7 @@ Collector site for Hot Wheels, Matchbox, Mini GT and Majorette diecast cars: eve
 | `index.html` | The whole app, built from the Claude-hosted page with `python3 tools/build_index.py <page.html>`. |
 | `runtime.js` | Connects the app to Supabase: accounts (email link, Google later), garages, profiles, market and trades, with live updates. Drops, prices and site settings also load from `/data`. |
 | `api/scan.js` | The AI scanner (Vercel function). Needs `ANTHROPIC_API_KEY` in Vercel; capped at 150 scans per collector per day. |
-| `supabase/setup.sql` | Database tables and access rules. Paste into Supabase → SQL Editor → Run. |
+| `supabase/01_setup.sql`, then `02_password_login.sql` | Database tables and access rules. Paste into Supabase → SQL Editor → Run. |
 | `map/` | The hunting map's store data. |
 | `data/` | Drops (`releases.json`), prices (`values.json`), collector-added cars, card details and site settings. |
 
