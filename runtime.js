@@ -18,6 +18,20 @@
   window.__sb = sb;
   window.__SITE_MODE = "live";
 
+  /* ---------- error alerts: crashes and failed saves are recorded in site_errors (admins read them) ---------- */
+  const errSeen = new Set(); let errSent = 0;
+  const NOISE = /ResizeObserver loop|Script error\.?$|cancelled|AbortError|The user aborted|Load failed$|NetworkError when attempting|Failed to fetch$/i;
+  function reportError(kind, message, detail){
+    try{
+      message = String(message || "").slice(0, 500); if(!message || NOISE.test(message)) return;
+      const k = kind + "|" + message; if(errSeen.has(k) || errSent >= 15) return; errSeen.add(k); errSent++;
+      sb.from("site_errors").insert({kind, message, detail: String(detail || "").slice(0, 2000), page: (location.pathname + location.hash).slice(0, 300), ua: navigator.userAgent.slice(0, 200)}).then(() => {}, () => {});
+    }catch(e){}
+  }
+  window.__reportError = reportError;
+  window.addEventListener("error", e => reportError("crash", e.message, (e.error && e.error.stack) || `${e.filename || ""}:${e.lineno || ""}:${e.colno || ""}`));
+  window.addEventListener("unhandledrejection", e => { const r = e.reason; reportError("crash", (r && r.message) || String(r), r && r.stack) });
+
   const copy = v => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
   const split = p => { const s = String(p).split("/").filter(Boolean); return {col: s.slice(0, -1).join("/"), id: s[s.length - 1]} };
 
@@ -126,6 +140,7 @@
         const {data: row, error} = await sb.from("docs").upsert({col, id, data: copyData}, {onConflict: "col,id"}).select("version").maybeSingle();
         if(!error){ if(row && row.version) cmap(vers, col).set(id, Math.max(row.version, vers.get(col)?.get(id) || 0)); return }
         if(attempt < 2 && !/row-level security|permission|42501|violat/i.test(error.message || "")){ await new Promise(r => setTimeout(r, 600 * (attempt + 1))); continue }
+        reportError("save-failed", `Couldn't save ${col.split("/")[0]}: ${error.message || error.code || "unknown"}`, `${col}/${id} · ${JSON.stringify(copyData).length} bytes`);
         throw err(error);
       }
     });
@@ -265,7 +280,8 @@
         headers: {"content-type": "application/json", authorization: "Bearer " + s.access_token},
         body: JSON.stringify({prompt, images, tier: opts.modelTier || "default"})});
       const out = await r.json().catch(() => ({}));
-      if(!r.ok){ const e = new Error(out.error || "The scanner couldn't read that"); e.code = r.status === 429 ? "rate-limited" : "scan-failed"; throw e }
+      if(!r.ok){ const e = new Error(out.error || "The scanner couldn't read that"); e.code = r.status === 429 ? "rate-limited" : "scan-failed";
+        if(r.status >= 500) reportError("scan-failed", `Scanner error ${r.status}: ${out.error || ""}`, `${images.length} photo(s)`); throw e }
       return out.result;
     }
   };

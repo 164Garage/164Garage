@@ -65,6 +65,9 @@ export default async function handler(req, res) {
   const out = await r.json().catch(() => ({}));
   if (!r.ok) {
     console.error("anthropic", r.status, out?.error?.message);
+    // record it for the daily check (the visitor's own token, so it's tied to their account)
+    fetch(SUPABASE_URL + "/rest/v1/site_errors", { method: "POST", headers: sbHeaders(token, { "content-type": "application/json", prefer: "return=minimal" }),
+      body: JSON.stringify({ kind: "scan-api", message: `Claude API ${r.status}: ${String(out?.error?.message || "").slice(0, 300)}`, page: "/api/scan" }) }).catch(() => {});
     return res.status(502).json({ error: r.status === 429 || r.status === 529 ? "The scanner is busy. Try again in a minute." : "The scanner couldn't read that. Try again." });
   }
   const text = (out.content || []).filter((c) => c.type === "text").map((c) => c.text).join("");

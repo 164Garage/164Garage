@@ -1,0 +1,6 @@
+-- Applied Nov 20, 2026 with the Supabase connector (migration "error_log_and_history").
+-- site_errors: website crashes / failed saves / scanner errors (anyone can add, admins read).
+-- docs_history: old copy of every changed or deleted document, kept 30 days (profile photo copies skipped).
+-- daily_stats: one row of totals per day for the daily data check.
+-- restore_doc(col, id, before): admin-only, puts a document back the way it was.
+-- See the migration in Supabase for the full SQL; this file records what exists.
