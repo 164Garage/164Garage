@@ -141,7 +141,8 @@ s = rep(s, '"loginform","ggform"', '"loginform","pwloginform","signupform","forg
 # after a password-reset link: open the account page with the new-password box
 s = rep(s, "function remembered(){", """function pwPrompt(){ try{ return sessionStorage.getItem("setpw")==="1" }catch(e){ return false } }
 function remembered(){""")
-s = rep(s, "go(page);\n\n(async()=>{", "go(pwPrompt() ? \"login\" : page);\n\n(async()=>{")
+s = rep(s, "go(page);\n\n(async()=>{", """try{ if(sessionStorage.getItem("authmsg")==="ended"){ sessionStorage.removeItem("authmsg"); loginMsg = "You were logged out on this device, because your password changed or the session ended. Log in again to pick up where you left off."; page = "login" } }catch(e){}
+go(pwPrompt() ? "login" : page);\n\n(async()=>{""")
 
 open(out_path, "w", encoding="utf-8").write(HEAD + s + "\n</body>\n</html>\n")
 print("built", out_path, len(HEAD + s), "bytes")

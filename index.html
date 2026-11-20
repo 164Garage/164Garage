@@ -4124,7 +4124,14 @@ function vDash(){
 }
 let dashOpen = false;
 function queueProfileSync(){ clearTimeout(syncT); syncT = setTimeout(()=>{ syncProfile(); if(typeof wfSync==="function") wfSync() }, 1500) }
-async function syncProfile(base){
+/* one profile sync at a time: overlapping syncs used to re-upload every photo */
+let profSyncing = null, profSyncAgain = null;
+function syncProfile(base){
+  if(profSyncing){ profSyncAgain = base || profSyncAgain || true; return profSyncing }
+  profSyncing = (async()=>{ try{ await syncProfileNow(base) } finally { profSyncing = null; if(profSyncAgain){ const b = profSyncAgain===true ? undefined : profSyncAgain; profSyncAgain = null; syncProfile(b) } } })();
+  return profSyncing;
+}
+async function syncProfileNow(base){
   if(!db||!uid) return;
   const cur = base || profilesDocs[uid]; if(!cur) return;
   const o = own(), pub = cur.public !== false;
@@ -4556,6 +4563,7 @@ document.addEventListener("submit", async e=>{
 document.body.dataset.page = "home";
 try{ const p=localStorage.getItem("page"); if(p && p!=="profile") page=p }catch(e){}
 const h=location.hash.slice(1); if(["drops","brands","market","collectors","garage","want"].includes(h)) page=h;
+try{ if(sessionStorage.getItem("authmsg")==="ended"){ sessionStorage.removeItem("authmsg"); loginMsg = "You were logged out on this device, because your password changed or the session ended. Log in again to pick up where you left off."; page = "login" } }catch(e){}
 go(pwPrompt() ? "login" : page);
 
 (async()=>{

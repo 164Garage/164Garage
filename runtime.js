@@ -34,46 +34,65 @@
   })();
 
   /* ---------- cache + listeners ---------- */
+  // Each document keeps its version number, so a late or repeated update from the server can never
+  // overwrite a newer copy (that used to undo fresh edits and re-upload photos).
   const cache = new Map();          // col -> Map(id -> data), rows from Supabase
+  const vers = new Map();           // col -> Map(id -> version)
   const loaded = new Map();         // col -> Promise (first full load)
   const colSubs = new Map();        // col -> Set(callback)
   const docSubs = new Map();        // "col/id" -> Set(callback)
   const channels = new Map();       // col -> realtime channel
+  const cmap = (m, col) => { if(!m.has(col)) m.set(col, new Map()); return m.get(col) };
 
+  // read-only views: a shallow copy is enough and keeps big garages (photos) fast
+  const view = d => d && typeof d === "object" ? {...d} : d;
   const merged = col => {
     const out = new Map(seed.get(col) || []);
     for(const [id, d] of (cache.get(col) || [])) out.set(id, d);
     return out;
   };
-  const snap = (col, id) => {
-    const m = merged(col), has = m.has(id);
-    return {id, exists: has, data: () => copy(m.get(id)), ref: docRef(col + "/" + id)};
-  };
-  function notify(col, id){
-    const cs = colSubs.get(col);
-    if(cs && cs.size){ const s = colSnap(col); cs.forEach(cb => { try{ cb(s) }catch(e){ console.error(e) } }) }
-    const ds = docSubs.get(col + "/" + id);
-    if(ds && ds.size){ const s = snap(col, id); ds.forEach(cb => { try{ cb(s) }catch(e){ console.error(e) } }) }
-  }
+  const snapFrom = (col, id, m) => { const d = m.get(id); return {id, exists: m.has(id), data: () => view(d), ref: docRef(col + "/" + id)} };
+  const snap = (col, id) => snapFrom(col, id, merged(col));
   const colSnap = (col, opts = {}) => {
-    let docs = [...merged(col).keys()].map(id => snap(col, id));
-    if(opts.order){ const {f, dir} = opts.order; docs.sort((a, b) => { const x = (a.data() || {})[f], y = (b.data() || {})[f]; return (x > y ? 1 : x < y ? -1 : 0) * dir }) }
+    const m = merged(col);
+    let docs = [...m.keys()].map(id => snapFrom(col, id, m));
+    if(opts.order){ const {f, dir} = opts.order; docs.sort((a, b) => { const x = (m.get(a.id) || {})[f], y = (m.get(b.id) || {})[f]; return (x > y ? 1 : x < y ? -1 : 0) * dir }) }
     if(opts.lim) docs = docs.slice(0, opts.lim);
     return {docs, size: docs.length, empty: !docs.length, metadata: {fromCache: false}, forEach: fn => docs.forEach(fn)};
   };
+
+  // changes are gathered and sent to the page in one go, so a burst of saves redraws once, not once per car
+  const dirtyCols = new Set(), dirtyDocs = new Set(); let flushT = null;
+  function notify(col, id){
+    dirtyCols.add(col); dirtyDocs.add(col + "/" + id);
+    if(!flushT) flushT = setTimeout(flush, 40);
+  }
+  function flush(){
+    flushT = null;
+    const cols = [...dirtyCols], docs = [...dirtyDocs]; dirtyCols.clear(); dirtyDocs.clear();
+    for(const col of cols){ const cs = colSubs.get(col); if(cs && cs.size){ const s = colSnap(col); cs.forEach(cb => { try{ cb(s) }catch(e){ console.error(e) } }) } }
+    for(const k of docs){ const ds = docSubs.get(k); if(ds && ds.size){ const i = k.lastIndexOf("/"), s = snap(k.slice(0, i), k.slice(i + 1)); ds.forEach(cb => { try{ cb(s) }catch(e){ console.error(e) } }) } }
+  }
+  function keep(col, id, data, version){
+    const vm = cmap(vers, col), cur = vm.get(id) || 0;
+    if(version && version < cur) return false;          // older than what we have: ignore
+    if(version) vm.set(id, version);
+    cmap(cache, col).set(id, data);
+    return true;
+  }
 
   async function loadCol(col){
     if(loaded.has(col)) return loaded.get(col);
     const p = (async () => {
       await seedReady;
-      const rows = new Map(), PAGE = 1000;
+      const PAGE = 500;
       for(let from = 0; ; from += PAGE){
-        const {data, error} = await sb.from("docs").select("id,data").eq("col", col).range(from, from + PAGE - 1);
+        const {data, error} = await sb.from("docs").select("id,data,version").eq("col", col).order("id").range(from, from + PAGE - 1);
         if(error) throw error;
-        (data || []).forEach(r => rows.set(r.id, r.data));
+        (data || []).forEach(r => keep(col, r.id, r.data, r.version));
         if(!data || data.length < PAGE) break;
       }
-      cache.set(col, rows);
+      cmap(cache, col);
       listen(col);
     })();
     loaded.set(col, p);
@@ -85,12 +104,10 @@
     if(channels.has(col)) return;
     const ch = sb.channel("docs:" + col + ":" + Math.random().toString(36).slice(2, 7))
       .on("postgres_changes", {event: "*", schema: "public", table: "docs", filter: "col=eq." + col}, ev => {
-        const row = ev.new && ev.new.id ? ev.new : ev.old;
-        if(!row || !row.id) return;
-        if(!cache.has(col)) cache.set(col, new Map());
-        if(ev.eventType === "DELETE") cache.get(col).delete(row.id);
-        else cache.get(col).set(row.id, row.data);
-        notify(col, row.id);
+        if(ev.eventType === "DELETE"){ const id = ev.old && ev.old.id; if(!id) return; cache.get(col)?.delete(id); vers.get(col)?.delete(id); notify(col, id); return }
+        const row = ev.new; if(!row || !row.id) return;
+        if((vers.get(col)?.get(row.id) || 0) >= (row.version || 0)) return;   // our own save coming back, or an older copy
+        if(keep(col, row.id, row.data, row.version)) notify(col, row.id);
       })
       .subscribe();
     channels.set(col, ch);
@@ -98,12 +115,20 @@
 
   /* ---------- writes ---------- */
   const err = (e) => { const x = new Error(e?.message || "Couldn't save"); x.code = /row-level security|permission|42501/i.test(e?.message || e?.code || "") ? "permission-denied" : (e?.code || "unknown"); return x };
+  // writes to the same document go out one at a time, in order
+  const queues = new Map();
+  function inOrder(key, fn){ const prev = queues.get(key) || Promise.resolve(); const next = prev.catch(() => {}).then(fn); queues.set(key, next); next.finally(() => { if(queues.get(key) === next) queues.delete(key) }); return next }
   async function writeDoc(col, id, data){
-    const {error} = await sb.from("docs").upsert({col, id, data}, {onConflict: "col,id"});
-    if(error) throw err(error);
-    if(!cache.has(col)) cache.set(col, new Map());
-    cache.get(col).set(id, copy(data));
-    notify(col, id);
+    const copyData = copy(data);
+    keep(col, id, copyData); notify(col, id);                // show it right away
+    return inOrder(col + "/" + id, async () => {
+      for(let attempt = 0; ; attempt++){
+        const {data: row, error} = await sb.from("docs").upsert({col, id, data: copyData}, {onConflict: "col,id"}).select("version").maybeSingle();
+        if(!error){ if(row && row.version) cmap(vers, col).set(id, Math.max(row.version, vers.get(col)?.get(id) || 0)); return }
+        if(attempt < 2 && !/row-level security|permission|42501|violat/i.test(error.message || "")){ await new Promise(r => setTimeout(r, 600 * (attempt + 1))); continue }
+        throw err(error);
+      }
+    });
   }
   function setPath(obj, path, val){
     const ks = path.split("."); let o = obj;
@@ -111,9 +136,10 @@
     if(val === undefined) delete o[ks[ks.length - 1]]; else o[ks[ks.length - 1]] = val;
   }
   async function currentRow(col, id){
-    const {data, error} = await sb.from("docs").select("data").eq("col", col).eq("id", id).maybeSingle();
+    const {data, error} = await sb.from("docs").select("data,version").eq("col", col).eq("id", id).maybeSingle();
     if(error) throw err(error);
-    return data ? data.data : (seed.get(col)?.get(id));
+    if(data){ if(!keep(col, id, data.data, data.version)) return cache.get(col).get(id); return data.data }
+    return seed.get(col)?.get(id);
   }
 
   /* ---------- Firestore-style references (what the app expects) ---------- */
@@ -121,14 +147,16 @@
     const {col, id} = split(path);
     return {
       id, path: col + "/" + id,
-      async get(){ await seedReady; const d = await currentRow(col, id); if(!cache.has(col)) cache.set(col, new Map());
-        if(d !== undefined && d !== null) cache.get(col).set(id, d); else cache.get(col).delete(id);
+      async get(){ await seedReady;
+        if(queues.has(col + "/" + id)) await queues.get(col + "/" + id).catch(() => {});
+        const d = await currentRow(col, id);
+        if(d === undefined || d === null){ if(!queues.has(col + "/" + id)) cache.get(col)?.delete(id) }
         return snap(col, id) },
-      async set(data, opts){ const base = opts?.merge ? (await currentRow(col, id)) || {} : {}; return writeDoc(col, id, {...base, ...copy(data)}) },
-      async update(fields){ const cur = await currentRow(col, id); if(cur === undefined || cur === null){ const e = new Error("No document to update"); e.code = "not-found"; throw e }
-        const next = copy(cur); Object.entries(fields || {}).forEach(([k, v]) => setPath(next, k, copy(v))); return writeDoc(col, id, next) },
-      async delete(){ const {error} = await sb.from("docs").delete().eq("col", col).eq("id", id); if(error) throw err(error);
-        cache.get(col)?.delete(id); notify(col, id) },
+      async set(data, opts){ const base = opts?.merge ? (await this.get()).data() || {} : {}; return writeDoc(col, id, {...base, ...copy(data)}) },
+      async update(fields){ const s = await this.get(); if(!s.exists){ const e = new Error("No document to update"); e.code = "not-found"; throw e }
+        const next = copy(s.data()); Object.entries(fields || {}).forEach(([k, v]) => setPath(next, k, copy(v))); return writeDoc(col, id, next) },
+      async delete(){ cache.get(col)?.delete(id); vers.get(col)?.delete(id); notify(col, id);
+        return inOrder(col + "/" + id, async () => { const {error} = await sb.from("docs").delete().eq("col", col).eq("id", id); if(error) throw err(error) }) },
       onSnapshot(cb, onErr){
         const k = col + "/" + id; if(!docSubs.has(k)) docSubs.set(k, new Set()); docSubs.get(k).add(cb);
         this.get().then(s => { cb(s); listen(col) }).catch(e => onErr && onErr(err(e)));
@@ -158,6 +186,13 @@
   }
   const db = {collection: c => colRef(c), doc: p => docRef(p)};
 
+  // coming back to the tab after a while (phone asleep, app switched): catch up on anything missed
+  let hiddenAt = 0;
+  document.addEventListener("visibilitychange", () => {
+    if(document.hidden){ hiddenAt = Date.now(); return }
+    if(hiddenAt && Date.now() - hiddenAt > 60000){ for(const col of [...loaded.keys()]){ loaded.delete(col); loadCol(col).then(() => notify(col, "")).catch(() => {}) } }
+  });
+
   /* ---------- accounts ---------- */
   const AVATAR = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="20" fill="#dfe5ec"/><circle cx="20" cy="16" r="7" fill="#9aa8b8"/><path d="M7 35c2-8 8-11 13-11s11 3 13 11" fill="#9aa8b8"/></svg>');
   async function session(){ const {data} = await sb.auth.getSession(); return data.session }
@@ -179,13 +214,15 @@
       return out;
     }
   };
-  // reload once when someone logs in or out in this tab or another one
-  let lastUid;
+  // reload only when the logged-in person actually changes (log in, log out); token refreshes don't
+  let lastUid, signingOut = false;
   sb.auth.onAuthStateChange((ev, s) => {
     if(ev === "PASSWORD_RECOVERY") try{ sessionStorage.setItem("setpw", "1") }catch(e){}
     const id = s?.user?.id || null;
     if(lastUid === undefined){ lastUid = id; return }
-    if(id !== lastUid){ lastUid = id; location.reload() }
+    if(id === lastUid) return;
+    if(!id && !signingOut) try{ sessionStorage.setItem("authmsg", "ended") }catch(e){}
+    lastUid = id; setTimeout(() => location.reload(), 50);
   });
   const authErr = (code, msg) => Object.assign(new Error(msg || code), {code});
   window.__auth = {
@@ -213,7 +250,7 @@
       const {error} = await sb.auth.signInWithOAuth({provider: "google", options: {redirectTo: location.origin + "/"}});
       if(error) throw error;
     },
-    async signOut(){ await sb.auth.signOut(); location.reload() }
+    async signOut(){ signingOut = true; await sb.auth.signOut({scope: "local"}); location.reload() }
   };
 
   /* ---------- AI scanner ---------- */
