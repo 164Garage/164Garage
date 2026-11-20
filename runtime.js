@@ -239,6 +239,28 @@
     if(!id && !signingOut) try{ sessionStorage.setItem("authmsg", "ended") }catch(e){}
     lastUid = id; setTimeout(() => location.reload(), 50);
   });
+  /* marketplace: private buyer/seller conversations and order steps (tables mk_threads, mk_messages) */
+  const mkErr = e => { const m = String((e && e.message) || "Something went wrong"); return Object.assign(new Error(m.replace(/^.*?: /, "")), {code: "market"}) };
+  const mkSubs = new Set(); let mkChan = null, mkT = null;
+  const mkPing = () => { clearTimeout(mkT); mkT = setTimeout(() => mkSubs.forEach(f => { try{ f() }catch(e){} }), 120) };
+  window.__market = {
+    async me(){ const s = await session(); return s?.user?.id || null },
+    async start(seller, listingId){ const {data, error} = await sb.rpc("mk_start", {p_seller: seller, p_listing: String(listingId)}); if(error) throw mkErr(error); return data },
+    async threads(){ const {data, error} = await sb.from("mk_threads").select("*").order("last_at", {ascending: false}).limit(200); if(error) throw mkErr(error); return data || [] },
+    async messages(tid){ const {data, error} = await sb.from("mk_messages").select("*").eq("thread_id", tid).order("id").limit(500); if(error) throw mkErr(error); return data || [] },
+    async send(tid, body){ const {error} = await sb.rpc("mk_send", {p_thread: tid, p_body: String(body || "").slice(0, 1000)}); if(error) throw mkErr(error) },
+    async act(tid, action, o = {}){ const {data, error} = await sb.rpc("mk_act", {p_thread: tid, p_action: action, p_amount: o.amount ?? null, p_carrier: o.carrier ?? null, p_tracking: o.tracking ?? null}); if(error) throw mkErr(error); return data },
+    async read(tid){ await sb.rpc("mk_read", {p_thread: tid}) },
+    subscribe(fn){
+      mkSubs.add(fn);
+      if(!mkChan) mkChan = sb.channel("mk:" + Math.random().toString(36).slice(2, 7))
+        .on("postgres_changes", {event: "*", schema: "public", table: "mk_threads"}, mkPing)
+        .on("postgres_changes", {event: "INSERT", schema: "public", table: "mk_messages"}, mkPing)
+        .subscribe();
+      return () => mkSubs.delete(fn);
+    }
+  };
+  document.addEventListener("visibilitychange", () => { if(!document.hidden) mkPing() });
   const authErr = (code, msg) => Object.assign(new Error(msg || code), {code});
   window.__auth = {
     // username (or email) + password

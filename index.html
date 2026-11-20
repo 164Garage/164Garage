@@ -829,6 +829,14 @@ svg.sil .t{stroke-width:1.9px}svg.sil .a{stroke-width:1.6px}svg.sil .x{stroke-wi
 .dupe-card .btn:not(.line){background:var(--forest);border-color:var(--forest)}
 @keyframes dpFade{from{opacity:0}}@keyframes dpUp{from{opacity:0;transform:translateY(12px) scale(.98)}}
 @media (prefers-reduced-motion:reduce){.dupe,.dupe-card{animation:none}}
+.mk-head{display:flex;gap:12px;align-items:center}.mk-head img{width:44px;height:44px;border-radius:50%;object-fit:cover;flex:none}.mk-head h2{margin:2px 0;font-size:20px}
+.mk-steps{display:flex;gap:4px;margin:4px 0}.mk-steps span{flex:1;text-align:center;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.04em;padding:6px 2px;border-radius:8px;background:color-mix(in srgb,var(--muted) 12%,transparent);color:var(--muted)}.mk-steps span.on{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--ink)}
+.mk-log{display:flex;flex-direction:column;gap:6px;max-height:min(46vh,420px);min-height:120px;overflow:auto;padding:10px;border-radius:14px;background:color-mix(in srgb,var(--muted) 7%,transparent)}
+.mk-b{max-width:80%;padding:8px 12px;border-radius:16px;background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.08);white-space:pre-wrap;overflow-wrap:anywhere;align-self:flex-start}.mk-b.me{align-self:flex-end;background:var(--accent);color:#fff}.mk-b small{display:block;opacity:.7;font-size:11px;margin-top:2px}
+.mk-ev{align-self:center;font-size:12.5px;color:var(--muted);text-align:center;padding:2px 8px}.mk-ev b{color:var(--ink)}
+.mk-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.mk-row input,.mk-row select{flex:1 1 120px;min-width:0}
+.mk-form{display:flex;gap:8px;align-items:flex-end}.mk-form textarea{flex:1;resize:none;min-height:44px;max-height:140px}
+.mk-list{display:flex;flex-direction:column;gap:8px}.mk-item{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:var(--panel);border:1px solid color-mix(in srgb,var(--muted) 20%,transparent);border-radius:14px;padding:10px 12px;cursor:pointer;color:inherit;font:inherit}.mk-item img{width:42px;height:42px;border-radius:50%;object-fit:cover;flex:none}.mk-item .who{flex:1;min-width:0}.mk-item .who small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}.mk-item.new{border-color:var(--accent)}.mk-dot{width:10px;height:10px;border-radius:50%;background:var(--accent);flex:none}
 .tr-paid{display:flex;flex-direction:column;gap:5px;margin-top:6px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--accent) 6%,var(--panel))}
 .tr-paid label,.tray-all label{font-size:13px;font-weight:700;color:var(--ink)}
 .tr-paidrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.tr-cur{font-weight:700;color:var(--muted)}
@@ -2846,8 +2854,8 @@ function vMarket(){
     <div class="head"><div><span class="eyebrow">Marketplace</span><h1>Buy &amp; sell</h1><p class="lede">${active.length} car${active.length===1?"":"s"} for sale from collectors. Tap a listing for the full description, shipping and distance.</p></div>
       ${signedIn && !sell ? (hasAccount() ? `<button class="btn" data-sell="new">Sell a car</button>` : showJoin() ? `<button class="btn" data-go="myprofile">Create account to sell</button>` : ""):""}</div>
     ${sell ? (sell.stage==="pick" ? sellPicker() : sellForm()) : ""}
-    <div class="tabs" role="group" aria-label="Marketplace view"><button data-mtab="sale" aria-pressed="${mtab==="sale"}">For sale</button><button data-mtab="trade" aria-pressed="${mtab==="trade"}">Trade board</button></div>
-    ${mtab==="trade" ? vTradeBoard() : `
+    <div class="tabs" role="group" aria-label="Marketplace view"><button data-mtab="sale" aria-pressed="${mtab==="sale"}">For sale</button><button data-mtab="trade" aria-pressed="${mtab==="trade"}">Trade board</button>${MK() && hasAccount() ? `<button data-mtab="msgs" aria-pressed="${mtab==="msgs"}">Messages${mkUnreadN() ? ` (${mkUnreadN()})` : ""}</button>` : ""}</div>
+    ${mtab==="msgs" && MK() ? vMessages() : mtab==="trade" ? vTradeBoard() : `
     <div class="toolbar"><input id="mq" type="search" placeholder="Search listings" aria-label="Search listings" value="${esc(mq)}">
       ${(()=>{ const forL = active.filter(l=>!mbrand||brandKey(l.brand)===brandKey(mbrand)), forB = active.filter(l=>!mline || (mline==="__chase" ? isChase(l) : l.line===mline));
         return `<select id="mline" aria-label="Line"><option value="">All lines</option>${forL.some(l=>isChase(l))?`<option value="__chase" ${mline==="__chase"?"selected":""}>Chase</option>`:""}${LINES.filter(x=>forL.some(l=>l.line===x)).map(x=>`<option value="${x}" ${mline===x?"selected":""}>${esc(lineName(x))}</option>`).join("")}</select>
@@ -2933,6 +2941,112 @@ function readSellForm(){ const g = id => document.getElementById("s-"+id);
 }
 const myListings = () => listings.filter(l=>l.seller===uid).map(({seller,...r})=>r);
 let lbusy = false;
+/* ---------- marketplace messages: private chat, offers and order steps (website only, via window.__market) ---------- */
+const MK = () => (typeof window!=="undefined" && window.__market) || null;
+let mkThreads = [], mkChat = null, mkInit = false, mkSeen = null;
+const mkRole = t => t.seller===uid ? "seller" : "buyer", mkOther = t => t.seller===uid ? t.buyer : t.seller;
+const mkUnread = t => !!t.last_by && t.last_by!==uid && new Date(t.last_at) > new Date(mkRole(t)==="seller" ? t.seller_read : t.buyer_read);
+const mkUnreadN = () => mkThreads.filter(mkUnread).length;
+const MK_STEPS = [["accepted","Agreed"],["paid","Paid"],["shipped","Shipped"],["received","Received"]];
+const MK_LABEL = {open:"Chatting", offered:"Offer sent", accepted:"Deal agreed", declined:"Offer declined", paid:"Paid", shipped:"Shipped", received:"Done", cancelled:"Cancelled"};
+const mkMoney = v => v==null || v==="" ? "" : money(+v);
+const mkWhen = t => { const d = new Date(t), now = new Date(); return d.toDateString()===now.toDateString() ? d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}) : d.toLocaleDateString(undefined,{month:"short",day:"numeric"}) };
+async function mkStart(){
+  if(mkInit || !MK() || !uid || !hasAccount()) return; mkInit = true;
+  await mkLoad(); MK().subscribe(async()=>{ await mkLoad(); if(mkChat) await mkLoadMsgs() });
+}
+async function mkLoad(){
+  try{ mkThreads = await MK().threads() }catch(e){ return }
+  const fresh = mkThreads.filter(t=>mkUnread(t) && (!mkChat || mkChat.id!==t.id));
+  if(mkSeen){ const n = fresh.find(t=>!mkSeen.has(t.id+"|"+t.last_at)); if(n) toast(`New message from ${dispName(mkOther(n))} about ${n.car}`) }
+  mkSeen = new Set(mkThreads.map(t=>t.id+"|"+t.last_at));
+  if(page==="market" && !viewL && !mkChat) render();
+}
+async function mkOpen(id){
+  mkChat = {id, msgs:[]}; viewL = null; detail = null;
+  renderChat(); await mkLoadMsgs(); MK().read(id).then(()=>{ const t = mkThreads.find(x=>x.id===id); if(t){ t[mkRole(t)==="seller"?"seller_read":"buyer_read"] = new Date().toISOString() } if(page==="market") render() }).catch(()=>{});
+}
+async function mkLoadMsgs(){ if(!mkChat) return; const id = mkChat.id; try{ const m = await MK().messages(id); if(mkChat && mkChat.id===id){ mkChat.msgs = m; renderChat(); MK().read(id).catch(()=>{}) } }catch(e){ toast(e.message) } }
+function mkListingBtns(l){
+  if(!hasAccount()) return `<p class="small muted" style="margin:0">Log in to message the seller or make an offer.</p>`;
+  const t = mkThreads.find(x=>x.listing_id===l.id && x.seller===l.seller), k = esc(l.seller+"|"+l.id);
+  if(t) return `<div class="sheet-acts"><button class="btn" data-mkopen="${esc(t.id)}">Open your conversation${mkUnread(t)?" (new)":""}</button></div>`;
+  return `<div class="sheet-acts"><button class="btn" data-mkstart="${k}|buy">Buy for ${money(+l.price)}</button><button class="btn line" data-mkstart="${k}|offer">Make an offer</button><button class="btn line" data-mkstart="${k}|msg">Message seller</button></div>`;
+}
+function vMessages(){
+  if(!mkThreads.length) return `<div class="empty"><b>No messages yet</b><span>Tap a listing and choose Message seller or Make an offer. Buyers' messages about your listings show up here too.</span></div>`;
+  return `<div class="mk-list">${mkThreads.map(t=>{ const o = mkOther(t), n = mkUnread(t);
+    return `<button class="mk-item${n?" new":""}" data-mkopen="${esc(t.id)}"><img alt="" src="${esc(avatarOf(o))}"><div class="who"><b>${esc(t.car||"Car")}</b><small>${mkRole(t)==="seller"?"Buyer":"Seller"}: ${esc(dispName(o))} · ${esc(MK_LABEL[t.status]||"")}</small><small>${t.last_by===uid?"You: ":""}${esc(t.last_msg||"")}</small></div><small class="muted">${esc(mkWhen(t.last_at))}</small>${n?`<span class="mk-dot" aria-label="New"></span>`:""}</button>` }).join("")}</div>`;
+}
+function mkActions(t){
+  const r = mkRole(t), st = t.status, offer = mkMoney(t.offer), ask = mkMoney(t.ask);
+  const amt = (label, act, ph) => `<div class="mk-row"><input id="mk-amt" inputmode="decimal" placeholder="${ph}" aria-label="${ph}"><button class="btn line sm" data-mk="${act}">${label}</button></div>`;
+  const cancel = ["open","offered","accepted","declined"].includes(st) ? `<button class="link small" data-mk="cancel">Cancel this deal</button>` : "";
+  if(r==="buyer"){
+    if(["open","offered","declined"].includes(st)) return `${st==="offered" ? `<p class="small" style="margin:0">Waiting for the seller to answer your <b>${offer}</b> offer.</p>` : st==="declined" ? `<p class="small" style="margin:0">The seller declined. You can make a new offer.</p>` : ""}
+      ${t.ask!=null ? `<div class="mk-row"><button class="btn sm" data-mk="buy">Buy for ${ask}</button></div>` : ""}${amt(st==="offered"?"Change offer":"Make offer","offer","Your offer ($)")}${cancel}`;
+    if(st==="accepted") return `<p class="small" style="margin:0"><b>Deal agreed at ${offer}.</b> Send the payment the way you both agreed. The seller confirms here when it arrives, then ships.</p>${cancel}`;
+    if(st==="paid") return `<p class="small" style="margin:0">Paid. Waiting for the seller to ship.</p>`;
+    if(st==="shipped") return `<p class="small" style="margin:0">Shipped${t.carrier?` with ${esc(t.carrier)}`:""}${t.tracking?`. Tracking: <b>${esc(t.tracking)}</b>`:""}</p><div class="mk-row"><button class="btn sm" data-mk="received">I got the car</button></div>`;
+    if(st==="received") return `<p class="small" style="margin:0"><b>Deal done.</b> Enjoy the car!</p><div class="mk-row"><button class="btn line sm" data-person="${esc(t.seller)}" data-close="1">Rate the seller</button></div>`;
+    return `<p class="small muted" style="margin:0">This deal was cancelled.</p>`;
+  }
+  if(st==="offered") return `<p class="small" style="margin:0">Offer: <b>${offer}</b>${t.ask!=null?` (you asked ${ask})`:""}</p><div class="mk-row"><button class="btn sm" data-mk="accept">Accept ${offer}</button><button class="btn line sm" data-mk="decline">Decline</button></div>${amt("Counter","counter","Counter price ($)")}${cancel}`;
+  if(st==="open" || st==="declined") return `<p class="small muted" style="margin:0">Waiting for an offer. You can change your price for this buyer.</p>${amt("Set price","counter","New price ($)")}${cancel}`;
+  const ship = `<div class="mk-row"><select id="mk-carrier" aria-label="Carrier"><option>USPS</option><option>UPS</option><option>FedEx</option><option>Local pickup</option><option>Other</option></select><input id="mk-track" maxlength="60" placeholder="Tracking number" aria-label="Tracking number"><button class="btn sm" data-mk="shipped">Mark shipped</button></div>`;
+  if(st==="accepted") return `<p class="small" style="margin:0"><b>Deal agreed at ${offer}.</b> Confirm when the payment arrives, then ship.</p><div class="mk-row"><button class="btn sm" data-mk="paid">Payment received</button></div>${ship}${cancel}`;
+  if(st==="paid") return `<p class="small" style="margin:0">Paid. Pack it well and ship it.</p>${ship}`;
+  if(st==="shipped") return `<p class="small" style="margin:0">Shipped. Waiting for the buyer to confirm it arrived.</p>`;
+  if(st==="received") return `<p class="small" style="margin:0"><b>Deal done.</b> Sold for ${offer}.</p>`;
+  return `<p class="small muted" style="margin:0">This deal was cancelled.</p>`;
+}
+function renderChat(){
+  if(!mkChat) return; const t = mkThreads.find(x=>x.id===mkChat.id) || {}; const o = t.id ? mkOther(t) : "";
+  const old = document.getElementById("mk-msg"), draft = old ? old.value : (mkChat.draft||""), hadFocus = old && document.activeElement===old;
+  const amtOld = document.getElementById("mk-amt")?.value || "", trOld = document.getElementById("mk-track")?.value || "";
+  const idx = MK_STEPS.findIndex(([k])=>k===t.status), log = mkChat.msgs.map(m=> m.kind==="event"
+    ? `<div class="mk-ev"><b>${m.sender===uid?"You":esc(dispName(m.sender))}</b> · ${esc(m.body)} · ${esc(mkWhen(m.created_at))}</div>`
+    : `<div class="mk-b${m.sender===uid?" me":""}">${esc(m.body)}<small>${esc(mkWhen(m.created_at))}</small></div>`).join("");
+  $("#sheet").innerHTML = `<div class="sheet-card" role="dialog" aria-modal="true" aria-label="Conversation about ${esc(t.car||"a car")}">
+    <button class="btn line sm sheet-x" data-close="1" aria-label="Close">Close</button>
+    <div class="sheet-body">
+      <div class="mk-head"><img alt="" src="${esc(avatarOf(o))}"><div style="min-width:0"><span class="eyebrow">${t.id ? (mkRole(t)==="buyer"?"Buying from ":"Selling to ")+esc(dispName(o)) : "Conversation"}</span><h2>${esc(t.car||"")}</h2><small class="muted">${t.ask!=null?`Price ${mkMoney(t.ask)}`:""}${t.offer!=null?` · Deal ${mkMoney(t.offer)}`:""} · ${esc(MK_LABEL[t.status]||"")}</small></div></div>
+      ${t.status && t.status!=="cancelled" ? `<div class="mk-steps" aria-label="Order progress">${MK_STEPS.map(([k,lab],i)=>`<span class="${idx>=i?"on":""}">${lab}</span>`).join("")}</div>` : ""}
+      <div class="mk-log" id="mk-log" aria-live="polite">${log || `<div class="mk-ev">Say hi and ask anything about the car.</div>`}</div>
+      ${t.id ? mkActions(t) : ""}
+      ${t.status!=="cancelled" && t.status!=="received" ? `<form class="mk-form" id="mk-form"><textarea id="mk-msg" maxlength="1000" rows="2" placeholder="Write a message" aria-label="Message"></textarea><button class="btn" type="submit">Send</button></form>` : ""}
+      <p class="small muted" style="margin:0">Paying through 1:64 Garage is coming soon. Until then, pay with a protected method like PayPal Goods &amp; Services, and never share passwords or login codes.</p>
+    </div></div>`;
+  $("#sheet").hidden = false; document.body.style.overflow = "hidden";
+  const ta = document.getElementById("mk-msg"); if(ta){ ta.value = draft; if(hadFocus) ta.focus() }
+  const a = document.getElementById("mk-amt"); if(a && amtOld) a.value = amtOld; const tr = document.getElementById("mk-track"); if(tr && trOld) tr.value = trOld;
+  const lg = document.getElementById("mk-log"); if(lg) lg.scrollTop = lg.scrollHeight;
+  if(mkChat.focusAmt){ mkChat.focusAmt = false; a?.focus() }
+}
+document.addEventListener("click", async e=>{
+  const b = e.target.closest && e.target.closest("[data-mkstart],[data-mkopen],[data-mk]"); if(!b || !MK()) return;
+  if(b.dataset.mkopen){ await mkOpen(b.dataset.mkopen); return }
+  if(b.dataset.mkstart){ if(needAccount()) return; const [seller, lid, how] = b.dataset.mkstart.split("|"); b.disabled = true;
+    try{ const id = await MK().start(seller, lid); mkThreads = await MK().threads();
+      if(how==="buy"){ await MK().act(id, "buy"); mkThreads = await MK().threads() }
+      await mkOpen(id); if(how==="offer"){ mkChat.focusAmt = true; renderChat() } if(how==="buy") toast("Sent. The seller will confirm and tell you how to pay.") }
+    catch(err){ toast(err.message) } finally{ b.disabled = false } return }
+  if(b.dataset.mk && mkChat){ const a = b.dataset.mk, t = mkThreads.find(x=>x.id===mkChat.id); if(!t) return;
+    const o = {}; if(["offer","counter"].includes(a)){ const v = parseFloat(String(document.getElementById("mk-amt")?.value||"").replace(/[^0-9.]/g,"")); if(!(v>0)){ toast("Type an amount first, like 20"); document.getElementById("mk-amt")?.focus(); return } o.amount = v }
+    if(a==="shipped"){ o.carrier = document.getElementById("mk-carrier")?.value || ""; o.tracking = document.getElementById("mk-track")?.value || ""; if(o.carrier!=="Local pickup" && !o.tracking.trim()){ toast("Add the tracking number so the buyer can follow it"); document.getElementById("mk-track")?.focus(); return } }
+    if(a==="cancel" && !b.dataset.sure){ b.dataset.sure = "1"; b.textContent = "Tap again to cancel the deal"; return }
+    b.disabled = true;
+    try{ await MK().act(t.id, a, o); if(a==="shipped") await mkMarkSold(t, o); mkThreads = await MK().threads(); await mkLoadMsgs() }catch(err){ toast(err.message); b.disabled = false } }
+});
+document.addEventListener("submit", async e=>{
+  if(e.target.id!=="mk-form" || !mkChat || !MK()) return; e.preventDefault();
+  const ta = document.getElementById("mk-msg"), body = (ta?.value||"").trim(); if(!body) return;
+  ta.value = ""; try{ await MK().send(mkChat.id, body); await mkLoadMsgs() }catch(err){ ta.value = body; toast(err.message) }
+});
+document.addEventListener("keydown", e=>{ if(e.target && e.target.id==="mk-msg" && e.key==="Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); document.getElementById("mk-form")?.requestSubmit() } });
+/* when the seller ships, the listing is marked sold at the agreed price */
+async function mkMarkSold(t){ const items = myListings(), i = items.findIndex(x=>x.id===t.listing_id); if(i<0 || items[i].status==="sold") return;
+  items[i] = {...items[i], status:"sold", soldAt:Date.now(), soldPrice:+t.offer || +items[i].price}; await writeListings(items) }
 async function writeListings(items){
   if(!db||!uid){ toast("Sign in to post listings."); return false }
   if(lbusy) return false; lbusy = true;
@@ -2986,6 +3100,7 @@ function renderListing(){
       <div class="box"><h3>Seller</h3>
         <button class="person" style="background:none;border:0;padding:0;cursor:pointer;text-align:left" data-person="${esc(l.seller)}"><img alt="" src="${esc(avatarOf(l.seller))}"><div class="who"><b>${esc(mineL?"You":seller)}</b>${mineL?"":unameTag(l.seller)}${ratingBadge(l.seller)}<small class="muted">${esc([(profilesDocs[l.seller]||{}).city, `${listings.filter(x=>x.seller===l.seller&&x.status==="sold").length} sold`].filter(Boolean).join(" · "))}</small></div></button>
         ${l.pay&&l.pay.length?`<p class="small" style="margin:0"><b>Accepts:</b> ${esc(l.pay.join(", "))}</p>`:""}
+        ${!mineL && l.status!=="sold" && MK() ? mkListingBtns(l) : ""}
         ${l.status!=="sold"?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="contact">${esc(l.contact)}</span><button class="btn line sm" data-copy="${esc(l.contact)}">Copy</button></div>`:""}
         ${mkL && (mkL.n>1 || mkL.basis==="sold") ? `<p class="small muted" style="margin:0">Market value: <b>${money(mkL.value)}</b> (${mkL.basis==="sold"?`median of ${mkL.n} sale${mkL.n>1?"s":""}`:`median of ${mkL.n} listings`} on 1:64 Garage)</p>` : ""}<p class="small muted" style="margin:0">Message the seller to buy. Pay with a protected method and confirm shipping before you send money.</p>${mineL?"":`<p style="margin:0">${reportLink("listing", l.seller+"|"+l.id, l.name+" listing")}</p>`}${reportBox && reportBox.kind==="listing" ? reportPanel() : ""}</div>
       ${mineL && l.status!=="sold" ? (viewL.sold ? `<div class="box"><h3>Mark as sold</h3><div class="form" style="grid-template-columns:1fr 1fr"><label>Sold for ($)<input id="sold-price" inputmode="decimal" value="${esc(l.price)}"></label>${l.carId && cars.some(c=>c.id===l.carId)?`<label style="flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:14px;align-self:end;padding-bottom:10px"><input type="checkbox" id="sold-rm" checked> Remove it from my garage</label>`:""}</div><div class="sheet-acts"><button class="btn" data-lact="sold-ok">Mark sold</button><button class="btn line" data-lact="sold-cancel">Cancel</button></div></div>`
@@ -3936,6 +4051,7 @@ function vWant(){
 }
 
 function render(){
+  if(!mkInit && uid && MK()) mkStart();
   if(typeof ggDrag!=="undefined" && ggDrag) return;   // never redraw under a prop someone is dragging
   const v = {showroom:vShowroom, check:vCheck, about:vAbout, terms:vTerms, business:vBusiness, trends:vTrends, login:vLogin, home:vHome, drops:vDrops, brands:vBrands, market:vMarket, collectors:vCollectors, profile:vProfile, garage:vGarage, want:vWant}[page] || vHome;
   const focus = document.activeElement && document.activeElement.id, sel = focus && document.activeElement.selectionStart;
@@ -4300,7 +4416,7 @@ function openDetail(owner, car){ detail = {owner, car}; renderDetail();
   const k = owner+"/"+car.id;
   if(owner!==uid && car.id && (car.photo || car.hasPhoto) && !(k in fullPhotos)){ fullPhotos[k]=""; db?.doc(`profiles/${owner}/photos/${car.id}`).get().then(d=>{ const u=d.exists && safeImg(d.data().url); if(u){ fullPhotos[k]=u; if(detail&&detail.car===car) renderDetail() } }).catch(()=>{}) }
 }
-function closeDetail(){ viewL=null; detail=null; $("#sheet").hidden=true; document.body.style.overflow="" }
+function closeDetail(){ viewL=null; detail=null; mkChat=null; $("#sheet").hidden=true; document.body.style.overflow="" }
 function askPhoto(id){ const c = cars.find(x=>x.id===id); if(!c) return; detail = {owner:uid, car:c, mode:"photo"}; renderDetail() }
 function renderDetail(){
   if(!detail) return; if(detail.mode!=="edit") detail.buy = null; const {owner, mode} = detail, mineCar = owner===uid ? cars.find(x=>x.id===detail.car.id) : null;
@@ -4724,6 +4840,7 @@ go(pwPrompt() ? "login" : page);
   db.collection("offers").onSnapshot(s=>{ offersDocs = {}; s.docs.forEach(d=>offersDocs[d.id]=d.data()); render(); if(detail) renderDetail() }, ()=>{});
   db.collection("posts").onSnapshot(s=>{ postsDocs = {}; s.docs.forEach(d=>postsDocs[d.id]=d.data()); feed().filter(x=>!((x.by+"/"+x.id) in pphotos)).slice(0,24).forEach(x=>{ const k = x.by+"/"+x.id; pphotos[k] = "";
       db.doc(`posts/${x.by}/photos/${x.id}`).get().then(pd=>{ const u = pd.exists && safeImg(pd.data().url); if(u){ pphotos[k] = u; if(page==="collectors") render() } }).catch(()=>{}) }); if(page==="collectors") render() }, ()=>{});
+  mkStart();
   db.collection("ratings").onSnapshot(s=>{ ratingsDocs = {}; s.docs.forEach(d=>ratingsDocs[d.id]=d.data()); render(); if(viewL) renderListing() }, ()=>{});
   db.collection("values").onSnapshot(s=>{ mvals = {}; s.docs.forEach(d=>mvals[d.id]=d.data()); queueHistory(); render(); if(detail) renderDetail() }, ()=>{});
   db.collection("catalog").onSnapshot(s=>{ catalog = s.docs.flatMap(d=>{ const x = d.data()||{}; return Array.isArray(x.items) ? x.items : [x] }).filter(c=>c && c.name); render() }, ()=>{});
