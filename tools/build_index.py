@@ -21,6 +21,8 @@ HEAD = """<!doctype html>
 <meta property="og:description" content="Scan it. Value it. Park it in your garage. The collector site for 1:64 diecast.">
 <meta name="theme-color" content="#2b5c8a">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://www.1-64garage.com/">
+<meta property="og:url" content="https://www.1-64garage.com/">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/runtime.js"></script>
 </head>
