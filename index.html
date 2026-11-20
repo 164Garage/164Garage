@@ -1478,7 +1478,8 @@ async function exportVault(kind){
   if(!downloads) return;
   const all = cars.map(c=>({...c, maker:makerOf(c), value:carValue(c)||""}));
   try{
-    if(kind==="json") await downloads.save({filename:`164garage-garage-${localDate()}.json`, data: JSON.stringify(all.map(({photo, orig, ...r})=>r), null, 2)});
+    if(kind==="full") await downloads.save({filename:`164garage-full-backup-${localDate()}.json`, data: JSON.stringify({v:1, kind:"164garage-full-backup", cars: cars.map(({orig, ...r})=>r)})});
+    else if(kind==="json") await downloads.save({filename:`164garage-garage-${localDate()}.json`, data: JSON.stringify(all.map(({photo, orig, ...r})=>r), null, 2)});
     else if(kind==="template") await downloads.save({filename:"164garage-import-template.csv", data: [VCOLS.map(csvCell).join(","), ["Ferrari 365 GTB4 Competizione","","Ferrari","Hot Wheels","Mainline","HW Ferrari (2/5)","2026","62/250","C4982","","Long card (US)","no","Carded","own","Bin A","Found at Target","2026-10-07",""].map(csvCell).join(",")].join("\n")});
     else await downloads.save({filename:`164garage-garage-${localDate()}.csv`, data: [VCOLS.map(csvCell).join(","), ...all.map(c=>VCOLS.map(k=>csvCell(k==="chase" ? (c.chase?"yes":"no") : c[k])).join(","))].join("\n")});
   }catch(e){ if(e && e.code!=="declined") toast("Couldn't export that.") }
@@ -1508,6 +1509,16 @@ async function importVault(file){
   }
   importPlan = {file: file.name || "your file", plan}; render();
   setTimeout(()=>{ const el=document.getElementById("importprev"); if(el) el.scrollIntoView({block:"nearest"}) }, 0);
+}
+/* owner only: put a full backup (cars with their photos) back into this garage, e.g. when moving to the website */
+async function restoreVault(file){
+  if(!window.__isOwner || !hasAccount()) return;
+  let x; try{ x = JSON.parse(await file.text()) }catch(e){ toast("That file isn't a 1:64 Garage backup."); return }
+  const list = (Array.isArray(x) ? x : x && x.cars || []).filter(c=>c && typeof c.id==="string" && c.name);
+  const have = new Set(cars.map(c=>c.id)), todo = list.filter(c=>!have.has(c.id));
+  if(!todo.length){ toast(list.length ? "Everything in that backup is already in your garage." : "No cars found in that file."); return }
+  let n = 0; for(const c of todo){ const {value, ...car} = c; if(car.photo && !safeImg(car.photo)) delete car.photo; importing = `${++n}/${todo.length}`; if(n%5===1) render(); await save(car) }
+  importing = ""; render(); toast(`Restored ${todo.length} car${todo.length===1?"":"s"}${list.length>todo.length?` (${list.length-todo.length} already here)`:""}`);
 }
 async function commitImport(){
   if(!importPlan) return; const todo = importPlan.plan.filter(p=>p.act!=="skip"); let n = 0;
@@ -3370,7 +3381,7 @@ function vGarage(){
       <select id="gsort" aria-label="Sort"><option value="new">Newest</option><option value="young" ${gsort==="young"?"selected":""}>Youngest (newest release)</option><option value="old" ${gsort==="old"?"selected":""}>Oldest release</option><option value="az" ${gsort==="az"?"selected":""}>Name A–Z</option><option value="brand" ${gsort==="brand"?"selected":""}>Brand</option><option value="value" ${gsort==="value"?"selected":""}>Value: high to low</option><option value="valuelo" ${gsort==="valuelo"?"selected":""}>Value: low to high</option></select>
       <select id="gstat" aria-label="Status"><option value="">Any status</option>${[["vault","In your garage"],["sale","For sale"],["trade","For trade"],["pending","Trade pending"]].map(([k,l])=>{ const n=o.filter(c=>statusOf(c, uid)[k]).length; return n||gstat===k ? `<option value="${k}" ${gstat===k?"selected":""}>${l} (${n})</option>` : "" }).join("")}</select></div>
     ${!o.length ? empty("Your garage is empty","Tap Scan a car and point your camera at the card to add your first car.") : !list.length ? empty("No matches","Try another search, line, brand or status.") : gview==="quick" ? quickList(list) : `<div class="grid">${list.map(garageCard).join("")}</div>`}
-    ${hasAccount() ? `<details class="gtools panel"><summary>Import, export &amp; backup</summary><div class="vaulttools">${downloads?`<button class="btn line sm" data-vexport="csv">Export garage (CSV)</button><button class="btn line sm" data-vexport="json">Export (JSON backup)</button><button class="btn line sm" data-vexport="template">CSV template</button>`:""}<label class="photo-in" style="flex-direction:row"><input type="file" accept=".csv,text/csv" id="f-import"><span class="btn line sm">${importing?`Importing ${importing}…`:"Import wishlist (CSV)"}</span></label><span class="small muted dropnote">or drop a .csv file here</span></div></details>` : ""}
+    ${hasAccount() ? `<details class="gtools panel"><summary>Import, export &amp; backup</summary><div class="vaulttools">${downloads?`<button class="btn line sm" data-vexport="csv">Export garage (CSV)</button><button class="btn line sm" data-vexport="json">Export (JSON backup)</button>${window.__isOwner?`<button class="btn line sm" data-vexport="full">Full backup (with photos)</button>`:""}<button class="btn line sm" data-vexport="template">CSV template</button>`:""}<label class="photo-in" style="flex-direction:row"><input type="file" accept=".csv,text/csv" id="f-import"><span class="btn line sm">${importing?`Importing ${importing}…`:"Import wishlist (CSV)"}</span></label><span class="small muted dropnote">or drop a .csv file here</span>${window.__isOwner?`<label class="photo-in" style="flex-direction:row"><input type="file" accept=".json,application/json" id="f-restore"><span class="btn line sm">Restore full backup</span></label>`:""}</div></details>` : ""}
   </div>`;
 }
 /* quick edit: fast toggles for big collections, without opening each car */
@@ -4406,6 +4417,7 @@ document.addEventListener("change", async e=>{
     if((t.id==="s-photo"||t.id==="s-cam") && sell){ readSellForm(); sell.photo = await readImage(f, 720, .8); const box=t.closest("div").querySelector(".ph"); if(box) box.outerHTML = ph(sell.photo); return }
     if(t.id==="h-photo" || t.id==="h-cam"){ haul.caption = ($("#h-cap")?.value||""); haul.photo = await readImage(f, 900, .8); t.value = ""; render(); return }
     if(t.id==="f-import"){ const fl = f; t.value = ""; await importVault(fl); return }
+    if(t.id==="f-restore"){ const fl = f; t.value = ""; await restoreVault(fl); return }
     if(t.dataset.shotin && sell){ readSellForm(); (sell.shotsNew ||= {})[t.dataset.shotin] = await readImage(f, 720, .8); render(); return }
     if(t.id==="s-check"){ camClose(); const ph0 = await readImage(f, 1100, .85); t.value = ""; trayAdd("check", [ph0]); return }
     if(t.id==="f-scan"){ camClose();
