@@ -271,6 +271,8 @@ body>.wrap{width:100%}
 .hx-dish{position:absolute;left:50%;bottom:44px;width:min(380px,86%);height:56px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(#4a4f58,#1c1e23 70%);box-shadow:0 16px 30px rgba(0,0,0,.7),0 0 40px rgba(130,178,224,.18);overflow:hidden;z-index:-1}
 .hx-dish i{position:absolute;inset:0;border-radius:50%;background:repeating-conic-gradient(rgba(255,255,255,.08) 0 10deg,transparent 10deg 20deg);animation:ggSpin 10s linear infinite}
 .hx-cap{position:absolute;left:0;right:0;bottom:6px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;font-size:14px;min-height:24px;text-align:center}.hx-cap b{color:#fff}
+.hx-by{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);border-radius:999px;padding:2px 10px 2px 3px;font:600 12px var(--sans,inherit);cursor:pointer}.hx-by:hover{background:rgba(255,255,255,.16);color:#fff}
+.hx-by img{width:18px;height:18px;border-radius:50%;object-fit:cover}
 .hx-ticker{grid-column:1/-1;margin:8px -30px 0;overflow:hidden;border-top:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.35);white-space:nowrap}
 .hx-ticker > div{display:inline-flex;gap:34px;padding:10px 0;animation:hxTick 45s linear infinite}
 .hx-ticker span{font:600 13px var(--mono);color:rgba(255,255,255,.85)}.hx-ticker em{font-style:normal;color:#0b1520;background:#82b2e0;border-radius:4px;padding:1px 6px;margin-right:8px;font-size:11px}
@@ -2128,7 +2130,7 @@ function ggList(list, g){
 function ggPhoto(owner, c){
   if(owner===uid) return safeImg(c.photo) || rphotos[key(c.name)] || "";
   const k = owner+"/"+c.id;
-  if((c.photo || c.hasPhoto) && !(k in fullPhotos) && db){ fullPhotos[k] = ""; db.doc(`profiles/${owner}/photos/${c.id}`).get().then(d=>{ const u = d.exists && safeImg(d.data().url); if(u){ fullPhotos[k] = u; if(page==="showroom" || page==="profile") render() } }).catch(()=>{}) }
+  if((c.photo || c.hasPhoto) && !(k in fullPhotos) && db){ fullPhotos[k] = ""; db.doc(`profiles/${owner}/photos/${c.id}`).get().then(d=>{ const u = d.exists && safeImg(d.data().url); if(u){ fullPhotos[k] = u; if(page==="showroom" || page==="profile" || page==="home") render() } }).catch(()=>{}) }
   return fullPhotos[k] || safeImg(c.photo) || rphotos[key(c.name)] || "";
 }
 function ggCarArt(owner, c, g, cls){
@@ -2430,10 +2432,20 @@ document.addEventListener("keydown", e=>{ if(e.key==="Escape" && document.getEle
 let hxCur = 0, hxTimer = null, hxPaused = false; const hxCounted = new Set();
 function hxPool(){
   const out = [], seen = new Set();
-  const add = (c, photo) => { const k = key(c.name)+"|"+tier(c.line); if(seen.has(k) || out.length>=14) return; seen.add(k); out.push({name:c.name, brand:c.brand||"", line:c.line||"", th:c.th, sth:c.sth, chase:c.chase, photo:safeImg(photo)||""}) };
-  [...own()].filter(c=>safeImg(c.photo)).sort((a,b)=>(isHunt(b)?1:0)-(isHunt(a)?1:0) || carValue(b)-carValue(a)).forEach(c=>add(c, c.photo));
+  const add = (c, photo, by) => { const k = key(c.name)+"|"+tier(c.line)+(by?"|"+by:""); if(seen.has(k) || out.length>=14) return; seen.add(k); out.push({name:c.name, brand:c.brand||"", line:c.line||"", th:c.th, sth:c.sth, chase:c.chase, photo:safeImg(photo)||"", by:by||""}) };
+  // other collectors' cars with photos: hunts first, one car per collector per round so the show mixes garages
+  const others = () => { const per = profileList().filter(p=>p.id!==uid && p.public!==false).map(p=>(p.cars||[]).filter(c=>safeImg(c.photo)||c.hasPhoto)
+      .sort((a,b)=>(isHunt(b)?1:0)-(isHunt(a)?1:0) || (b.pinned?1:0)-(a.pinned?1:0)).map(c=>({c, by:p.id}))).filter(l=>l.length);
+    const r = []; for(let i=0; per.some(l=>l[i]); i++) per.forEach(l=>{ if(l[i]) r.push(l[i]) }); return r };
+  const mine = [...own()].filter(c=>safeImg(c.photo)).sort((a,b)=>(isHunt(b)?1:0)-(isHunt(a)?1:0) || carValue(b)-carValue(a));
+  if(!mine.length){
+    // a brand-new collector has nothing of their own yet: open on real cars from other garages
+    others().slice(0,10).forEach(x=>add(x.c, ggPhoto(x.by, x.c), x.by));
+  } else {
+    mine.forEach(c=>add(c, c.photo));
+    others().slice(0,4).forEach(x=>add(x.c, ggPhoto(x.by, x.c), x.by));
+  }
   allKnown().forEach(c=>{ const u = rphotos[key(c.name)]; if(u) add(c, u) });
-  profileList().forEach(p=>(p.cars||[]).forEach(c=>{ if(c.photo) add(c, c.photo) }));
   if(out.length < 7) allKnown().filter(c=>isHunt(c)).forEach(c=>add(c, ""));
   if(out.length < 7) allKnown().forEach(c=>add(c, ""));
   return out;
@@ -2444,7 +2456,7 @@ function hxPlace(){
     el.style.transform = `translateX(${d*58}%) translateZ(${-a*90}px) rotateY(${d*-28}deg) scale(${1-a*.1})`;
     el.style.zIndex = 20 - a; el.style.opacity = a > 3 ? 0 : 1 - a*.18; el.style.visibility = a > 3 ? "hidden" : "visible"; el.classList.toggle("on", d===0); el.tabIndex = d===0 ? 0 : -1 });
   const cur = hxPool()[((hxCur%n)+n)%n], cap = document.querySelector(".hx-cap");
-  if(cur && cap) cap.innerHTML = `<b>${esc(cur.name)}</b>${huntBadge(cur)}`;
+  if(cur && cap) cap.innerHTML = `<b>${esc(cur.name)}</b>${huntBadge(cur)}${cur.by ? `<button class="hx-by" data-person="${esc(cur.by)}"><img alt="" src="${esc(avatarOf(cur.by))}">${esc(uname(cur.by) ? "@"+uname(cur.by) : dispName(cur.by))}'s garage</button>` : ""}`;
 }
 function hxMount(){
   hxPlace();
@@ -2483,7 +2495,7 @@ function vHero(){
   </section>`;
 }
 document.addEventListener("click", e=>{ const c = e.target.closest(".hx-card"); if(!c) return; const i = +c.dataset.hx, n = document.querySelectorAll(".hx-card").length;
-  const cur = ((hxCur%n)+n)%n; if(i===cur){ go(hasAccount() && own().length ? "showroom" : "drops") } else { hxCur = i; hxPlace() } });
+  const cur = ((hxCur%n)+n)%n; if(i===cur){ const by = hxPool()[cur]?.by; if(by){ document.querySelector(".hx-cap [data-person]")?.click(); return } go(hasAccount() && own().length ? "showroom" : "drops") } else { hxCur = i; hxPlace() } });
 document.addEventListener("mouseover", e=>{ hxPaused = page==="home" && !!e.target.closest?.(".hx-show") });
 document.addEventListener("mouseleave", ()=>{ hxPaused = false });
 let hxX = null;

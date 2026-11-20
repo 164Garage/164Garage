@@ -171,7 +171,9 @@
     },
     async can(){ return !!(await session()) },
     async profiles(ids){
+      // every id gets an answer (the app asks again for any it doesn't get); names come from profiles
       const s = await session(); const out = {};
+      (ids || []).forEach(id => { out[id] = {name: "", avatarUrl: AVATAR} });
       if(s && ids.includes(s.user.id)){ const md = s.user.user_metadata || {}; out[s.user.id] = {name: md.full_name || md.name || "", avatarUrl: md.avatar_url || md.picture || AVATAR} }
       return out;
     }
