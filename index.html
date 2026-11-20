@@ -884,9 +884,9 @@ body.tray-on{overflow:hidden}body.tray-on .toast{z-index:1100!important}
 /* where you got it: store (retail) or another collector */
 fieldset.buy{border:1px solid var(--line);border-radius:12px;padding:10px 12px 12px;margin:0;min-width:0;min-inline-size:0;display:flex;flex-direction:column;gap:10px;background:color-mix(in srgb,var(--soft) 55%,transparent)}
 .buy legend{font-size:12px;font-weight:700;color:var(--ink);padding:0 4px}
-.buyseg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
-.buyseg button{border:0;background:transparent;padding:8px 10px;min-height:40px;font-weight:650;font-size:13.5px;line-height:1.25;color:var(--muted);cursor:pointer}
-.buyseg button + button{border-left:1px solid var(--line)}
+.buyseg{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:1px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--line)}
+.buyseg button{border:0;background:var(--panel);padding:8px 10px;min-height:40px;font-weight:650;font-size:13.5px;line-height:1.25;color:var(--muted);cursor:pointer}
+.buyseg button + button{border-left:0}
 .buyseg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
 .buygrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.buygrid .bg-wide{grid-column:span 2}
 @media (max-width:560px){.buygrid{grid-template-columns:1fr 1fr}.buygrid .bg-wide{grid-column:1/-1}}
@@ -1865,16 +1865,20 @@ function parseLoc(s){
 function newBuy(){ return {from:"store", paid:"", paidAuto:false, store:"", who:"", spot:"", loc:null, locIn:"", locMsg:""} }
 /* a scan only goes to the garage once the collector has said what they paid (a typed price, the shelf price, or trade/gift) */
 const hasPrice = B => !!B && (!!B.free || paidVal(B.paid) > 0 || (!!B.paidAuto && !!B.picked));
+/* where a car came from: a store, online, another collector, a trade or a gift */
+const BUY_FROM = [["store","In a store","In stores (retail)"],["online","Online","Bought online"],["person","From a collector","From collectors"],["trade","Traded","Trades"],["gift","Gift","Gifts"]];
+const buyKind = c => BUY_FROM.some(([k])=>k===c?.buyFrom) ? c.buyFrom : "store";
+const buyLabel = k => (BUY_FROM.find(x=>x[0]===k) || BUY_FROM[0])[1];
 /* the form state for a car already in the garage */
 function buyFromCar(c){
-  const person = c.buyFrom ? c.buyFrom==="person" : /ebay|trade|gift|flea|toy show|swap|mercari|facebook|offerup|whatnot|collector|@/i.test(c.source||"");
-  const has = +c.paid>0, auto = !person && (c.paidAuto===true || !has);
-  return {...newBuy(), from: person?"person":"store", paid: has && !auto ? String(c.paid) : "", paidAuto: auto, store: person?"":(c.source||""), who: person?(c.source||""):"", spot: SPOTS.includes(c.spot)?c.spot:"", loc: validLoc(c.loc)?{lat:c.loc.lat, lng:c.loc.lng}:null, storeKey: person?"":(c.storeKey||""), storeAddr: person?"":(c.storeAddr||"")};
+  const kind = c.buyFrom ? buyKind(c) : /gift/i.test(c.source||"") ? "gift" : /trade|swap/i.test(c.source||"") ? "trade" : /ebay|mercari|amazon|creations|online|offerup|whatnot/i.test(c.source||"") ? "online" : /flea|toy show|facebook|collector|@/i.test(c.source||"") ? "person" : "store";
+  const person = kind!=="store", has = +c.paid>0, auto = !person && (c.paidAuto===true || !has);
+  return {...newBuy(), from: kind, free: (kind==="gift" || kind==="trade") && !has, paid: has && !auto ? String(c.paid) : "", paidAuto: auto, store: person?"":(c.source||""), who: person?(c.source||""):"", spot: SPOTS.includes(c.spot)?c.spot:"", loc: validLoc(c.loc)?{lat:c.loc.lat, lng:c.loc.lng}:null, storeKey: person?"":(c.storeKey||""), storeAddr: person?"":(c.storeAddr||"")};
 }
 /* the fields saved on the car: buyFrom, paid, paidAuto, source, and for store buys spot and loc */
 function buyRecord(B, line, maker){
-  B = B || newBuy(); const person = B.from==="person", retail = retailFor(line, maker), auto = !person && !!B.paidAuto && retail != null;
-  const out = {buyFrom: person?"person":"store", paid: auto ? retail : paidVal(B.paid), paidAuto: auto, source: String((person ? B.who : B.store)||"").trim().slice(0,40)};
+  B = B || newBuy(); const kind = BUY_FROM.some(([k])=>k===B.from) ? B.from : "store", person = kind!=="store", retail = retailFor(line, maker), auto = !person && !!B.paidAuto && retail != null;
+  const out = {buyFrom: kind, paid: kind==="gift" ? 0 : auto ? retail : paidVal(B.paid), paidAuto: auto, source: String((person ? B.who : B.store)||"").trim().slice(0,40)};
   if(!person && SPOTS.includes(B.spot)) out.spot = B.spot;
   if(!person && validLoc(B.loc)) out.loc = {lat:r5(B.loc.lat), lng:r5(B.loc.lng)};
   if(!person && validLoc(B.loc) && B.storeKey){ out.storeKey = String(B.storeKey).slice(0,60); if(B.storeAddr) out.storeAddr = String(B.storeAddr).slice(0,100) }
@@ -1884,7 +1888,10 @@ const withBuy = (c, rec) => { const n = {...c}; delete n.loc; delete n.spot; del
 const bp = k => "b-" + String(k).replace(/[^a-z0-9]/gi,"");
 function buyHint(k, B, line, maker){
   const retail = retailFor(line, maker), L = lineName(line||"Mainline");
-  if(B.from==="person") return "Leave it blank for a trade or a gift.";
+  if(B.from==="gift") return "Gifts are saved at $0, so they count fully toward what your garage has gained.";
+  if(B.from==="trade") return "Optional: what the car you traded away was worth. Blank saves it at $0.";
+  if(B.from==="online") return "Include shipping if you like. Blank saves no price.";
+  if(B.from==="person") return "Leave it blank if you didn't pay anything.";
   if(B.paidAuto && retail != null) return `<span class="rtag">retail</span> ${esc(L)} shelf price. Change it if you paid something else.`;
   if(retail == null) return paidVal(B.paid) ? "" : `${esc(maker && NO_RETAIL_MAKERS.has(maker) ? maker : L)} has no shelf price. Type what you paid.`;
   return paidVal(B.paid) ? "" : `Blank saves no price. <button type="button" class="link small" data-buyretail="${esc(k)}">Use the ${money(retail)} shelf price</button>`;
@@ -1896,13 +1903,14 @@ function pinStatus(k, B){
 }
 /* "Where did you get it?" for the add form, the scan tray and the edit form */
 function buyBox(k, B, line, maker, noPaid){
-  const p = bp(k), K = esc(k), person = B.from==="person", retail = retailFor(line, maker), auto = !person && B.paidAuto;
+  const p = bp(k), K = esc(k), kind = BUY_FROM.some(([x])=>x===B.from) ? B.from : "store", person = kind!=="store", retail = retailFor(line, maker), auto = !person && B.paidAuto;
+  const whoLabel = {online:"Where online", person:"Who / where", trade:"Traded with", gift:"From who"}[kind], whoPh = {online:"eBay, Mattel Creations, Amazon", person:"@handle, swap meet, eBay seller", trade:"@handle, what you traded", gift:"Mom, birthday 2026"}[kind];
   const pv = auto ? (retail != null ? retail.toFixed(2) : "") : B.paid;
   return `<fieldset class="buy c6" data-buybox="${K}"><legend>Where did you get it?</legend>
-    <div class="buyseg" role="group" aria-label="Where did you get it?"><button type="button" id="${p}-fs" data-buyfrom="${K}|store" aria-pressed="${!person}">In a store (retail)</button><button type="button" id="${p}-fp" data-buyfrom="${K}|person" aria-pressed="${person}">From another collector</button></div>
+    <div class="buyseg" role="group" aria-label="Where did you get it?">${BUY_FROM.map(([v,l],i)=>`<button type="button" id="${p}-f${v}" data-buyfrom="${K}|${v}" aria-pressed="${kind===v}">${l}</button>`).join("")}</div>
     <div class="buygrid">
-      ${noPaid ? "" : `<label>${person?"Price you paid ($)":"Price paid ($)"}<input id="${p}-paid" data-buyf="${K}|paid" inputmode="decimal" maxlength="9" autocomplete="off" value="${esc(pv)}" placeholder="${person ? "5.00" : retail != null ? retail.toFixed(2) : "0.00"}"></label>`}
-      ${person ? `<label class="bg-wide">Who / where <span class="opt">(optional)</span><input id="${p}-who" data-buyf="${K}|who" maxlength="40" autocomplete="off" value="${esc(B.who)}" placeholder="@handle, swap meet, eBay seller"></label>`
+      ${noPaid || kind==="gift" ? "" : `<label>${kind==="trade"?"Value of what you traded ($)":person?"Price you paid ($)":"Price paid ($)"}<input id="${p}-paid" data-buyf="${K}|paid" inputmode="decimal" maxlength="9" autocomplete="off" value="${esc(pv)}" placeholder="${person ? "5.00" : retail != null ? retail.toFixed(2) : "0.00"}"></label>`}
+      ${person ? `<label class="bg-wide">${whoLabel} <span class="opt">(optional)</span><input id="${p}-who" data-buyf="${K}|who" maxlength="40" autocomplete="off" value="${esc(B.who)}" placeholder="${whoPh}"></label>`
       : `${typeof spHtml==="function" ? "" : `<label>Store<input id="${p}-store" data-buyf="${K}|store" list="sourcelist" maxlength="40" autocomplete="off" value="${esc(B.store)}" placeholder="Target, Main St"></label>`}
       <label>Spot in the store<select id="${p}-spot" data-buyf="${K}|spot"><option value="">Not noted</option>${SPOTS.map(s=>`<option ${B.spot===s?"selected":""}>${esc(s)}</option>`).join("")}</select></label>`}
     </div>
@@ -1934,8 +1942,9 @@ function pinHere(k){
 }
 document.addEventListener("click", e=>{
   const t = e.target.closest && e.target.closest("[data-buyfrom],[data-buypin],[data-buyunpin],[data-buyretail]"); if(!t) return;
-  if(t.dataset.buyfrom){ const s = t.dataset.buyfrom, i = s.lastIndexOf("|"), k = s.slice(0,i), v = s.slice(i+1)==="person" ? "person" : "store", ctx = buyCtx(k); if(!ctx) return; const B = ctx.B;
-    if(B.from!==v){ B.from = v; if(v==="person" && B.paidAuto){ B.paidAuto = false; B.paid = "" } if(v==="store" && !paidVal(B.paid)){ B.paidAuto = true; B.paid = "" } B.locMsg = "" }
+  if(t.dataset.buyfrom){ const s = t.dataset.buyfrom, i = s.lastIndexOf("|"), k = s.slice(0,i), raw = s.slice(i+1), v = BUY_FROM.some(([x])=>x===raw) ? raw : "store", ctx = buyCtx(k); if(!ctx) return; const B = ctx.B;
+    if(B.from!==v){ B.from = v; if(v!=="store" && B.paidAuto){ B.paidAuto = false; B.paid = "" } if(v==="store" && !paidVal(B.paid)){ B.paidAuto = true; B.paid = "" }
+      if(v==="gift"){ B.paid = ""; B.free = true } else B.free = v==="trade" && !paidVal(B.paid); B.locMsg = "" }
     repaintBuy(k, t.id); return }
   if(t.dataset.buypin){ pinHere(t.dataset.buypin); return }
   if(t.dataset.buyunpin){ const k = t.dataset.buyunpin, ctx = buyCtx(k); if(ctx){ ctx.B.loc = null; ctx.B.locIn = ""; ctx.B.locMsg = ""; const li = document.getElementById(bp(k)+"-locin"); if(li) li.value = ""; paintPin(k) } return }
@@ -1944,7 +1953,7 @@ document.addEventListener("click", e=>{
 document.addEventListener("input", e=>{
   const t = e.target; if(!t.dataset) return;
   if(t.dataset.buyf){ const s = t.dataset.buyf, i = s.lastIndexOf("|"), k = s.slice(0,i), f = s.slice(i+1), ctx = buyCtx(k); if(!ctx) return; const B = ctx.B;
-    if(f==="paid"){ B.paid = t.value; B.paidAuto = false; const h = document.getElementById(bp(k)+"-hint"); if(h) h.innerHTML = buyHint(k, B, ctx.line, ctx.maker) }
+    if(f==="paid"){ B.paid = t.value; B.paidAuto = false; B.free = B.from==="trade" && !paidVal(B.paid); const h = document.getElementById(bp(k)+"-hint"); if(h) h.innerHTML = buyHint(k, B, ctx.line, ctx.maker) }
     else if(["store","who","spot"].includes(f)){ B[f] = t.value; if(f==="store") B.storeKey = "" }
     return }
   if(t.dataset.buyloc){ const k = t.dataset.buyloc, ctx = buyCtx(k); if(!ctx) return; const B = ctx.B, l = parseLoc(t.value); B.locIn = t.value;
@@ -3683,7 +3692,7 @@ function trayPaid(it){
 /* "Where did you get it?" tucked under each scan, so the tray stays quick to review */
 function trayBuy(it){
   const B = it.buy ??= newBuy(), r = it.res, rec = buyRecord(B, r.line, r.maker);
-  const sum = `${rec.buyFrom==="person" ? "From a collector" : "In a store"}${rec.paid ? ` · ${money(rec.paid)}` : ""}${rec.paidAuto ? ` <span class="rtag">retail</span>` : ""}${rec.source ? ` · ${esc(rec.source)}` : ""}${rec.loc ? " · pinned" : ""}`;
+  const sum = `${buyLabel(rec.buyFrom)}${rec.paid ? ` · ${money(rec.paid)}` : ""}${rec.paidAuto ? ` <span class="rtag">retail</span>` : ""}${rec.source ? ` · ${esc(rec.source)}` : ""}${rec.loc ? " · pinned" : ""}`;
   return `<details class="trbuy" data-trbuy="${it.id}"${it.buyOpen ? " open" : ""}><summary>Where did you get it? <small class="muted">${sum}</small></summary>${buyBox("tr:"+it.id, B, r.line, r.maker, true)}</details>`;
 }
 document.addEventListener("toggle", e=>{ const t = e.target; if(t.dataset && t.dataset.trbuy){ const it = trayItem(t.dataset.trbuy); if(it) it.buyOpen = t.open } }, true);
@@ -3881,7 +3890,7 @@ function render(){
   if(focus && document.getElementById(focus)){ const el=document.getElementById(focus); el.focus(); try{ el.setSelectionRange(sel,sel) }catch(e){} }
   const brands = new Set([...allKnown().map(c=>c.brand), ...cars.map(c=>c.brand)].filter(Boolean));
   $("#brandlist").innerHTML = [...brands].sort().map(b=>`<option value="${esc(b)}">`).join("");
-  { const cnt = {}; own().forEach(c=>{ const s = String(c.source||"").trim(); if(s && c.buyFrom!=="person") cnt[s] = (cnt[s]||0)+1 });   // your past stores first, then common ones
+  { const cnt = {}; own().forEach(c=>{ const s = String(c.source||"").trim(); if(s && buyKind(c)==="store") cnt[s] = (cnt[s]||0)+1 });   // your past stores first, then common ones
     const past = Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]), sl = $("#sourcelist"), h = [...past, ...STORE_DEFAULTS.filter(d=>!past.some(p=>norm(p)===norm(d)))].map(s=>`<option value="${esc(s)}">`).join("");
     if(sl && sl._h!==h){ sl._h = h; sl.innerHTML = h } }
   if(render.known !== allKnown()){ render.known = allKnown(); $("#dbcars").innerHTML = [...new Set(render.known.map(c=>c.name))].sort().map(n=>`<option value="${esc(n)}">`).join(""); $("#dbsets").innerHTML = [...new Set(releases.map(r=>r.title))].sort().map(n=>`<option value="${esc(n)}">`).join("") }
@@ -4070,8 +4079,8 @@ function vPortfolio(o){
   if(!P.held.length) return `<div class="pf-empty"><b>Track it like a stock portfolio</b><span class="small muted">When you add a car, pick where you got it: store finds fill in the shelf price, and you type what you paid another collector. You can also add prices in Quick edit or a car's Edit details. Then see your total cost, current value, gain or loss and ROI. Only you see what you paid.</span></div>`;
   const up = P.gain >= 0, sorted = [...P.held].sort((a,b)=>b.roi-a.roi);
   const rows = [...sorted.slice(0,5), ...sorted.slice(5).filter(h=>h.roi<0).slice(-3)];
-  const row = h => `<tr><td><button class="link" data-own-detail="${h.c.id}">${esc(h.c.name)}</button><small>${esc(lineName(h.c.line))}${h.c.buyFrom==="person"?" · from a collector":""}</small></td><td>${money(h.paid)}${h.c.paidAuto?`<small><span class="rtag" title="Shelf price filled in for a store find">retail</span></small>`:""}</td><td>${money(h.val)}</td><td class="${h.gain>=0?"pf-up":"pf-down"}">${h.gain>=0?"+":"−"}${Math.abs(h.roi).toFixed(0)}%</td></tr>`;
-  const split = [["store","In stores (retail)"],["person","From collectors"]].map(([k,label])=>{ const hs = P.held.filter(h=>(h.c.buyFrom==="person"?"person":"store")===k), cost = hs.reduce((a,h)=>a+h.paid,0), value = hs.reduce((a,h)=>a+h.val,0), g = value-cost;
+  const row = h => `<tr><td><button class="link" data-own-detail="${h.c.id}">${esc(h.c.name)}</button><small>${esc(lineName(h.c.line))}${buyKind(h.c)!=="store"?" · "+buyLabel(buyKind(h.c)).toLowerCase():""}</small></td><td>${money(h.paid)}${h.c.paidAuto?`<small><span class="rtag" title="Shelf price filled in for a store find">retail</span></small>`:""}</td><td>${money(h.val)}</td><td class="${h.gain>=0?"pf-up":"pf-down"}">${h.gain>=0?"+":"−"}${Math.abs(h.roi).toFixed(0)}%</td></tr>`;
+  const split = BUY_FROM.filter(([k],i)=>i<1 || k==="person" || P.held.some(h=>buyKind(h.c)===k)).map(([k,,label])=>{ const hs = P.held.filter(h=>buyKind(h.c)===k), cost = hs.reduce((a,h)=>a+h.paid,0), value = hs.reduce((a,h)=>a+h.val,0), g = value-cost;
     return `<div class="${hs.length ? (g>=0?"pf-up":"pf-down") : ""}"><small>${label} · ${hs.length} car${hs.length===1?"":"s"}</small>${hs.length ? `<span>${money(cost)} paid → ${money(value)} now</span><b>${g>=0?"+":"−"}${money(Math.abs(g))} (${g>=0?"+":"−"}${Math.abs(cost ? g/cost*100 : 0).toFixed(1)}%)</b>` : `<span class="muted">None yet</span>`}</div>` }).join("");
   return `<div class="pf">
     <div class="pf-tiles"><div><small>What you paid</small><b>${money(P.cost)}</b></div><div><small>Worth now</small><b>${money(P.value)}</b></div>
@@ -4087,7 +4096,7 @@ const retailerOf = n => /target/i.test(n||"") ? "target" : /wal-?mart/i.test(n||
 const kmBetween = (a, b) => { const r = Math.PI/180, x = (b.lng-a.lng)*r*Math.cos((a.lat+b.lat)/2*r), y = (b.lat-a.lat)*r; return Math.sqrt(x*x+y*y)*6371 };
 function huntStores(o){
   const groups = [];
-  for(const c of o){ if(c.buyFrom==="person" || !validLoc(c.loc)) continue; const n = norm(c.source);
+  for(const c of o){ if(buyKind(c)!=="store" || !validLoc(c.loc)) continue; const n = norm(c.source);
     // same store = same name within 1.5 km, or any pins within 150 m of each other
     let g = groups.find(g=>(n && g.names.has(n) && kmBetween(g.loc, c.loc) < 1.5) || kmBetween(g.loc, c.loc) < .15);
     if(!g){ g = {loc:{lat:c.loc.lat, lng:c.loc.lng}, names:new Set(), cars:[]}; groups.push(g) }
@@ -4132,7 +4141,7 @@ function huntCard(st){
 }
 function vHuntMap(o){
   const stores = huntStores(o), finds = stores.reduce((a,x)=>a+x.cars.length,0), hasMap = typeof HM!=="undefined";
-  const tally = f => { const m = new Map(); o.forEach(c=>{ if(c.buyFrom==="person") return; const v = String(f(c)||"").trim(); if(!v) return; const k = norm(v), e = m.get(k) || {label:v, n:0}; e.n++; m.set(k, e) }); return [...m.values()].sort((a,b)=>b.n-a.n) };
+  const tally = f => { const m = new Map(); o.forEach(c=>{ if(buyKind(c)!=="store") return; const v = String(f(c)||"").trim(); if(!v) return; const k = norm(v), e = m.get(k) || {label:v, n:0}; e.n++; m.set(k, e) }); return [...m.values()].sort((a,b)=>b.n-a.n) };
   const byStore = tally(c=>c.source).slice(0,8), bySpot = tally(c=>c.spot), fmtN = n => `${n} find${n===1?"":"s"}`;
   const open = huntOpen ?? stores.length > 0, on = k => !!(hasMap && HM.sel && HM.sel.type==="pin" && HM.sel.s.key===k);
   return `<details class="panel vdash hm" data-hunt="1"${open?" open":""}><summary><b>Hunting map</b><span class="small muted">Find stores near your ZIP code${stores.length ? ` · ${stores.length} store${stores.length===1?"":"s"} pinned · ${finds} find${finds===1?"":"s"}` : ""}</span></summary>
@@ -4152,14 +4161,14 @@ document.addEventListener("click", e=>{ const t = e.target.closest && e.target.c
 function vHuntMapOld(o){
   if(!o.length) return "";
   const stores = huntStores(o), sel = stores.find(x=>x.key===huntSel) || stores[0], finds = stores.reduce((a,x)=>a+x.cars.length,0);
-  const tally = f => { const m = new Map(); o.forEach(c=>{ if(c.buyFrom==="person") return; const v = String(f(c)||"").trim(); if(!v) return; const k = norm(v), e = m.get(k) || {label:v, n:0}; e.n++; m.set(k, e) }); return [...m.values()].sort((a,b)=>b.n-a.n) };
+  const tally = f => { const m = new Map(); o.forEach(c=>{ if(buyKind(c)!=="store") return; const v = String(f(c)||"").trim(); if(!v) return; const k = norm(v), e = m.get(k) || {label:v, n:0}; e.n++; m.set(k, e) }); return [...m.values()].sort((a,b)=>b.n-a.n) };
   const byStore = tally(c=>c.source).slice(0,8), bySpot = tally(c=>c.spot), fmtN = n => `${n} find${n===1?"":"s"}`;
   const open = huntOpen ?? stores.length > 0;
   const legend = ["target","walmart","other"].filter(r=>stores.some(x=>x.retailer===r)).map(r=>`<span><i class="hm-key hm-${r}" aria-hidden="true"></i>${RETAILER_NAME[r]}</span>`).join("");
   return `<details class="panel vdash hm" data-hunt="1"${open?" open":""}><summary><b>Hunting map</b><span class="small muted">${stores.length ? `${stores.length} store${stores.length===1?"":"s"} pinned · ${finds} find${finds===1?"":"s"}` : "Pin the stores where you find cars"}</span></summary>
     ${stores.length ? `<div class="hm-wrap"><div>${huntSvg(stores, sel)}<div class="hm-legend">${legend}<span class="muted">Bigger pin, more finds. Only you see this map.</span></div></div>${huntCard(sel)}</div>
       <h3 class="pf-h">Pinned stores</h3><div class="hm-list" role="group" aria-label="Pinned stores">${stores.map(x=>`<button type="button" class="hm-store" data-hpin="${esc(x.key)}" aria-pressed="${x===sel}"><i class="hm-key hm-${x.retailer}" aria-hidden="true"></i><span><b>${esc(x.name)}</b><small>${x.cars.length} car${x.cars.length===1?"":"s"} found · ${money(x.paid)} paid</small></span><span aria-hidden="true">›</span></button>`).join("")}</div>`
-    : `<div class="pf-empty"><b>No stores pinned yet</b><span class="small muted">When you add a car, pick <b>In a store (retail)</b>, then tap <b>📍 Pin this store</b> or paste a Google or Apple Maps link. You can pin a car you already have from its <b>Edit details</b>. Each store shows up here as a pin with every car you found there.</span></div>`}
+    : `<div class="pf-empty"><b>No stores pinned yet</b><span class="small muted">When you add a car, pick <b>In a store</b>, then tap <b>📍 Pin this store</b> or paste a Google or Apple Maps link. You can pin a car you already have from its <b>Edit details</b>. Each store shows up here as a pin with every car you found there.</span></div>`}
     <h3 class="pf-h">Where I hunt</h3>
     ${byStore.length || bySpot.length ? `<div class="vdash-grid"><div><h3>Finds by store</h3>${byStore.length ? bars(byStore.map(x=>[x.label, x.n]), fmtN) : `<p class="small muted" style="margin:0">Add the store name when you log a store find.</p>`}</div><div><h3>Finds by spot in the store</h3>${bySpot.length ? bars(bySpot.map(x=>[x.label, x.n]), fmtN) : `<p class="small muted" style="margin:0">Pick a spot (pegs, endcap, dump bin…) when you add a car.</p>`}</div></div>`
       : `<p class="small muted" style="margin:0">Add the store and the spot when you log a find, and your best stores and aisles show up here.</p>`}
