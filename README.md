@@ -6,17 +6,17 @@ Collector site for Hot Wheels, Matchbox, Mini GT and Majorette diecast cars: eve
 
 | File | What it is |
 |---|---|
-| `index.html` | The whole app (same app as the Claude-hosted version). |
-| `runtime.js` | Connects the app to its data. Right now it's the **preview runtime**: it reads the release database, prices and collector-added cars from `/data` and keeps accounts closed. The next step swaps in a Supabase runtime for sign-ups, garages, scanning and trading. |
-| `data/releases.json` | 290 sets / ~2,900 cars. |
-| `data/values.json` | Checked real-world prices. |
-| `data/catalog.json` | Cars collectors added from their own garages. |
-| `vercel.json` | Hosting settings for Vercel. |
+| `index.html` | The whole app, built from the Claude-hosted page with `python3 tools/build_index.py <page.html>`. |
+| `runtime.js` | Connects the app to Supabase: accounts (email link, Google later), garages, profiles, market and trades, with live updates. Drops, prices and site settings also load from `/data`. |
+| `api/scan.js` | The AI scanner (Vercel function). Needs `ANTHROPIC_API_KEY` in Vercel; capped at 150 scans per collector per day. |
+| `supabase/setup.sql` | Database tables and access rules. Paste into Supabase → SQL Editor → Run. |
+| `map/` | The hunting map's store data. |
+| `data/` | Drops (`releases.json`), prices (`values.json`), collector-added cars, card details and site settings. |
 
-There is no build step: Vercel serves the files as they are.
+There is no build step: Vercel serves the files as they are, plus the function in `api/`.
 
-## Deploying on Vercel
+## Who can see and change what
 
-1. On vercel.com click **Add New → Project**, pick **164garage**, and click **Import**.
-2. Leave **Framework Preset** on *Other* and leave the build settings empty.
-3. Click **Deploy**. The site goes live at `164garage.vercel.app` (or a similar address). Every change pushed to `main` goes live automatically.
+- Anyone: drops, prices, public profiles, listings, posts, ratings and offers.
+- Each collector: their own profile, listings, posts and so on, and their private garage (only they can read it).
+- Admins (rows in `public.admins`): everything except other people's private garages.
