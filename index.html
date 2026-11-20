@@ -157,6 +157,7 @@ textarea{resize:vertical;min-height:70px}
 .card .acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:auto}
 .tag{font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .tag.acc{color:var(--accent)}
+.tag.warn{color:#c2416b}
 .chase.th{color:var(--accent)}
 .chase{display:inline-flex;align-items:center;gap:4px;font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 6px;width:max-content}
 .price{font:750 20px/1 var(--display);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -2046,6 +2047,46 @@ async function applyCardMatch(res, photo, signal){
     // nothing printed on the card disagreed with a car you own, but the photos say it's a different card
     if(own().some(c=>sameRelease(c, res))){ res.forceNew = true; res.relName = releaseName(res, true) } else res.relName = releaseName(res) }
 }
+/* scan double-checker: when the first read isn't sure, or says it's a Treasure Hunt, Super Treasure Hunt or chase,
+   a closer second look compares the photo with the other releases of the same casting and flags likely hunts or misreads */
+function needsSecondLook(r){ return !!(r && r.found && !r.doubleCheck && (r.confidence!=="high" || r.ambiguous || r.newRelease || (r.cardMatch && r.cardMatch.confidence==="low") || ["TH","STH"].includes(r.line) || r.chase)) }
+async function doubleCheck(res, photo, signal){
+  if(!sample || !photo || !needsSecondLook(res)) return;
+  const n = norm(castName(res)), seen = new Set();
+  const sims = allKnown().filter(c=>norm(castName(c))===n || (words(castName(c)).length>1 && words(castName(c)).every(w=>words(res.name).includes(w)))).filter(c=>{ const k = [c.line,c.set,c.year,c.num||c.sub].join("|"); if(seen.has(k)) return false; seen.add(k); return true }).slice(0,14);
+  const first = {name:res.name, line:res.line, set:res.set, num:res.num, year:res.year, chase:!!res.chase};
+  const prompt = `Second look at a scan of a 1:64 diecast car on its card. The first read was: ${JSON.stringify(first)}.
+Look again closely at the photo. Check, in order:
+1. The casting name and the series name and card number printed on the card (e.g. "HW J-Imports 3/10", "158/250").
+2. Regular Treasure Hunt (line "TH"): a small silver/grey circle-flame logo printed on the card behind the car, and often on the car. Normal paint and plastic wheels.
+3. Super Treasure Hunt (line "STH"): Spectraflame (deep metallic) paint, Real Riders rubber tires, a small "TH" printed on the car, and a gold circle-flame logo on the card behind the car.
+4. Premium 0/5 chase (chase true, only on premium lines like Car Culture, Pop Culture, Boulevard): "0/5" on the card instead of "1/5" to "5/5", often black wheels or a different color.
+5. Anything the first read may have misread (wrong year, wrong number, wrong series, a similar casting).
+${sims.length ? `Releases of this casting already in our database:\n${sims.map(c=>`- ${castName(c)} | ${lineName(c.line)} | ${c.set||""} | ${c.year||""} | ${c.num||c.sub||""}${isSTH(c)?" | Super Treasure Hunt":isTH(c)?" | Treasure Hunt":""}${c.chase?" | 0/5 chase":""}`).join("\n")}\n` : ""}Reply with only one JSON object: {"name": "casting name", "line": one of ${JSON.stringify(LINES)}, "set": "series", "num": "card number or empty", "year": "4-digit year or empty", "chase": true or false, "confidence": "high" or "medium" or "low", "misread": true if the first read got anything wrong, "hunt_signs": ["short phrases naming the Treasure Hunt / Super Treasure Hunt / chase signs you can actually see"], "note": "one short sentence for the collector"}
+Never invent card numbers or years; leave them empty when unsure.`;
+  let r; try{ r = await sample.json(prompt, {signal, modelTier:"default", images:[dataUrlBlob((await shrink(photo, 1400)) || photo)]}) }catch(e){ if(e && e.code==="cancelled") throw e; return }
+  const str = v => typeof v==="string" ? v.trim().slice(0,120) : "";
+  const second = {name:str(r?.name)||res.name, line:LINES.includes(r?.line) ? r.line : res.line, set:str(r?.set)||res.set, num:str(r?.num).slice(0,12)||res.num, year:/^\d{4}$/.test(str(r?.year)) ? str(r.year) : res.year, chase: r?.chase===true && !["TH","STH"].includes(r?.line)};
+  const conf = ["high","medium","low"].includes(r?.confidence) ? r.confidence : "low", signs = Array.isArray(r?.hunt_signs) ? r.hunt_signs.map(str).filter(Boolean).slice(0,4) : [];
+  const label = {name:"name", line:"line", set:"series", num:"card number", year:"year", chase:"chase"};
+  const changed = Object.keys(second).filter(k=>String(second[k]||"").toLowerCase()!==String(first[k]||"").toLowerCase());
+  const huntUp = ["TH","STH"].includes(second.line) && second.line!==first.line, huntDown = ["TH","STH"].includes(first.line) && !["TH","STH"].includes(second.line);
+  res.doubleCheck = {conf, changed: changed.map(k=>label[k]), note: str(r?.note), signs, hunt: second.line, huntUp, huntDown, applied:false, suggest:null};
+  if(!changed.length){ if(conf==="high" && res.confidence==="low") res.confidence = "medium"; return }
+  if(conf==="high"){
+    Object.assign(res, second); res.doubleCheck.applied = true; res.snapped = false;
+    snapToDb(res); res.relName = releaseName(res);
+  } else res.doubleCheck.suggest = second;
+}
+function dcNote(r){
+  const d = r && r.doubleCheck; if(!d) return "";
+  const hunt = l => l==="STH" ? "Super Treasure Hunt" : l==="TH" ? "Treasure Hunt" : lineName(l);
+  const signs = d.signs.length ? ` <small class="muted">Signs: ${d.signs.map(esc).join(", ")}.</small>` : "";
+  if(!d.changed.length) return `<small class="tag acc">Double-checked: the second look agrees${["TH","STH"].includes(r.line) ? `, it's a ${hunt(r.line)}` : ""}</small>${signs}`;
+  if(d.applied) return `<small class="tag acc">Double-checked: fixed the ${esc(d.changed.join(", "))}${d.huntUp ? `. Looks like a ${hunt(d.hunt)}!` : d.huntDown ? ". Not a Treasure Hunt after all" : ""}</small>${d.note ? ` <small class="muted">${esc(d.note)}</small>` : ""}${signs}`;
+  const s = d.suggest || {};
+  return `<small class="tag warn">Check this one: the second look thinks the ${esc(d.changed.join(", "))} may be different${d.huntUp ? ` and it could be a ${hunt(d.hunt)}` : ""}</small> <small class="muted">${esc([s.name, lineName(s.line), s.set, s.num, s.year].filter(Boolean).join(" · "))}${d.note ? ". " + esc(d.note) : ""}</small>${signs}`;
+}
 function cardNote(r){
   const m = r.cardMatch; if(!m) return "";
   if(m.confidence==="low") return `<small class="muted">Compared with ${m.n} card photo${m.n>1?"s":""} on the site but couldn't tell for sure. Check the series and number.</small>`;
@@ -2076,6 +2117,7 @@ Use found:false if this is not a 1:64 diecast car. Never invent card numbers or 
     if(res.found){
       snapToDb(res);
       await applyCardMatch(res, photo, signal);
+      await doubleCheck(res, photo, signal);
       const vi = mvals[vkey({...res, name:res.relName||res.name})];        // a price we've checked online beats the AI's guess
       if(vi && +vi.value > 0){ Object.assign(res, {value:+vi.value, low:+vi.low||res.low, high:+vi.high||res.high, checked:true}) }
     }
@@ -3577,6 +3619,7 @@ Use found:false only if this does not look like a real 1:64 diecast release. Nev
   if(res.found && !res.loose){ await looksLoad(); const fx = cardNameFix(res); if(fx){ res.note = `Card number ${res.num} in ${res.set} is the ${fx.name}, so we used that name.`; Object.assign(res, {name:fx.name, year:res.year||fx.year, toy:res.toy||fx.toy}) } }
   if(res.found && res.loose){ try{ await looseMatch(res, photo, signal) }catch(e){ if(e && e.code==="cancelled") throw e } }
   if(res.found){ snapToDb(res); if(photo && !res.loose) await applyCardMatch(res, photo, signal) }
+  if(res.found && photo && !res.loose && aiImages) await doubleCheck(res, photo, signal);
   return {res, photo};
 }
 async function aiCheck(input){
@@ -3640,7 +3683,7 @@ const trayHave = r => r.forceNew ? null : own().find(c=>sameRelease(c, r));
 const trayCousin = r => r.forceNew || trayHave(r) ? null : own().find(c=>sameCar(c, r));
 /* what the scanner read off the packaging, shown under the car so you can check it against the card */
 const pkgLine = r => { const p = [r.asst ? "Asst "+r.asst : "", r.toy ? "Toy # "+r.toy : "", r.cardVar||""].filter(Boolean); return p.length ? `<br><span class="tag">${esc(p.join(" · "))}</span>` : "" };
-const releaseNote = (r, have) => cardNote(r) + releaseNote0(r, have);
+const releaseNote = (r, have) => cardNote(r) + dcNote(r) + releaseNote0(r, have);
 function releaseNote0(r, have){
   if(r.forceNew) return `<small class="tag acc">Adding as a separate release: ${esc(r.relName||"")}</small>`;
   if(have) return norm(have.name)!==norm(r.relName||r.name) ? `<small class="muted">Matched your ${esc(have.name)}${have.set?` (${esc(have.set)})`:""}. If this card's series, number or codes differ, it's a different release.</small>` : "";
