@@ -273,6 +273,13 @@ body>.wrap{width:100%}
 .hx-cap{position:absolute;left:0;right:0;bottom:6px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;font-size:14px;min-height:24px;text-align:center}.hx-cap b{color:#fff}
 .hx-by{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);border-radius:999px;padding:2px 10px 2px 3px;font:600 12px var(--sans,inherit);cursor:pointer}.hx-by:hover{background:rgba(255,255,255,.16);color:#fff}
 .hx-by img{width:18px;height:18px;border-radius:50%;object-fit:cover}
+.crop-ov{position:fixed;inset:0;z-index:9999;background:rgba(5,8,12,.72);display:flex;align-items:center;justify-content:center;padding:16px}
+.crop-box{background:var(--panel);color:var(--ink,inherit);border:1px solid var(--line);border-radius:16px;padding:18px;width:min(340px,100%);display:flex;flex-direction:column;gap:10px;box-shadow:0 20px 50px rgba(0,0,0,.45)}
+.crop-stage{position:relative;width:100%;aspect-ratio:1;border-radius:12px;overflow:hidden;background:#111;touch-action:none}
+.crop-stage canvas{width:100%;height:100%;display:block;cursor:grab}.crop-stage canvas:active{cursor:grabbing}
+.crop-ring{position:absolute;inset:0;pointer-events:none;border-radius:50%;box-shadow:0 0 0 999px rgba(0,0,0,.5);outline:2px solid rgba(255,255,255,.85);outline-offset:-2px}
+.crop-zoom{display:flex;align-items:center;gap:10px;font-size:13px}.crop-zoom input{flex:1}
+.crop-acts{display:flex;gap:8px;justify-content:flex-end}
 .hx-ticker{grid-column:1/-1;margin:8px -30px 0;overflow:hidden;border-top:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.35);white-space:nowrap}
 .hx-ticker > div{display:inline-flex;gap:34px;padding:10px 0;animation:hxTick 45s linear infinite}
 .hx-ticker span{font:600 13px var(--mono);color:rgba(255,255,255,.85)}.hx-ticker em{font-style:normal;color:#0b1520;background:#82b2e0;border-radius:4px;padding:1px 6px;margin-right:8px;font-size:11px}
@@ -1745,6 +1752,47 @@ function readImage(file, max, q){
     fr.readAsDataURL(file);
   });
 }
+/* crop a profile picture: drag to move, slider or pinch/scroll to zoom, round preview; returns a 320px square JPEG */
+let lastSubmitAt = 0; document.addEventListener("submit", ()=>{ lastSubmitAt = Date.now() }, true);
+function cropAvatar(file){
+  return new Promise(resolve=>{
+    if(!file || !/^image\//.test(file.type)){ toast("Pick a photo (JPG or PNG)."); return resolve(null) }
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onerror = ()=>{ URL.revokeObjectURL(url); toast("That photo couldn't be opened."); resolve(null) };
+    im.onload = ()=>{
+      const V = 280, wrap = document.createElement("div");
+      wrap.className = "crop-ov"; wrap.setAttribute("role","dialog"); wrap.setAttribute("aria-label","Crop your profile picture");
+      wrap.innerHTML = `<div class="crop-box"><b>Crop your profile picture</b><span class="small muted">Drag to move. Use the slider to zoom.</span>
+        <div class="crop-stage"><canvas width="${V*2}" height="${V*2}"></canvas><i class="crop-ring" aria-hidden="true"></i></div>
+        <label class="crop-zoom"><span>Zoom</span><input type="range" min="1" max="4" step="0.01" value="1"></label>
+        <div class="crop-acts"><button type="button" class="btn line sm" data-crop="no">Cancel</button><button type="button" class="btn sm" data-crop="ok">Use photo</button></div></div>`;
+      document.body.appendChild(wrap);
+      const cv = wrap.querySelector("canvas"), cx = cv.getContext("2d"), zoomIn = wrap.querySelector("input");
+      const base = Math.max(V/im.width, V/im.height); let z = 1, ox = 0, oy = 0;
+      const clamp = ()=>{ const w = im.width*base*z, h = im.height*base*z; ox = Math.min(0, Math.max(V-w, ox)); oy = Math.min(0, Math.max(V-h, oy)) };
+      const draw = ()=>{ clamp(); cx.setTransform(2,0,0,2,0,0); cx.fillStyle="#111"; cx.fillRect(0,0,V,V); cx.drawImage(im, ox, oy, im.width*base*z, im.height*base*z) };
+      ox = (V - im.width*base)/2; oy = (V - im.height*base)/2; draw();
+      const setZoom = nz => { nz = Math.min(4, Math.max(1, nz)); const c = V/2; ox = c - (c-ox)*nz/z; oy = c - (c-oy)*nz/z; z = nz; zoomIn.value = z; draw() };
+      zoomIn.addEventListener("input", ()=>setZoom(+zoomIn.value));
+      cv.addEventListener("wheel", e=>{ e.preventDefault(); setZoom(z * (e.deltaY < 0 ? 1.08 : 1/1.08)) }, {passive:false});
+      const pts = new Map(); let pinch = 0;
+      cv.addEventListener("pointerdown", e=>{ cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]); if(pts.size===2){ const [a,b] = [...pts.values()]; pinch = Math.hypot(a[0]-b[0], a[1]-b[1]) } });
+      cv.addEventListener("pointermove", e=>{ if(!pts.has(e.pointerId)) return; const [px,py] = pts.get(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]);
+        if(pts.size===2){ const [a,b] = [...pts.values()], d = Math.hypot(a[0]-b[0], a[1]-b[1]); if(pinch) setZoom(z * d/pinch); pinch = d; return }
+        const k = V / cv.getBoundingClientRect().width; ox += (e.clientX-px)*k; oy += (e.clientY-py)*k; draw() });
+      const up = e=>{ pts.delete(e.pointerId); if(pts.size<2) pinch = 0 };
+      cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+      const done = ok => { let out = null;
+        if(ok){ const S = 320, o = document.createElement("canvas"); o.width = o.height = S; const k = S/V, g = o.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,S,S); g.drawImage(im, ox*k, oy*k, im.width*base*z*k, im.height*base*z*k); out = o.toDataURL("image/jpeg", .88) }
+        URL.revokeObjectURL(url); wrap.remove(); document.removeEventListener("keydown", key); resolve(out) };
+      const key = e=>{ if(e.key==="Escape") done(false); if(e.key==="Enter") done(true) };
+      document.addEventListener("keydown", key);
+      wrap.addEventListener("click", e=>{ const b = e.target.closest("[data-crop]"); if(b) done(b.dataset.crop==="ok"); else if(e.target===wrap) done(false) });
+      wrap.querySelector('[data-crop="ok"]').focus();
+    };
+    im.src = url;
+  });
+}
 function squareImage(file, size){
   return new Promise((res, rej)=>{ if(!file || !/^image\//.test(file.type)) return rej(new Error("type"));
     const fr = new FileReader(); fr.onerror=()=>rej(new Error("read"));
@@ -2450,13 +2498,14 @@ function hxPool(){
   const out = [], seen = new Set();
   const add = (c, photo, by) => { const k = key(c.name)+"|"+tier(c.line)+(by?"|"+by:""); if(seen.has(k) || out.length>=14) return; seen.add(k); out.push({name:c.name, brand:c.brand||"", line:c.line||"", th:c.th, sth:c.sth, chase:c.chase, photo:safeImg(photo)||"", by:by||""}) };
   // other collectors' cars with photos: hunts first, one car per collector per round so the show mixes garages
-  const others = () => { const per = profileList().filter(p=>p.id!==uid && p.public!==false).map(p=>(p.cars||[]).filter(c=>safeImg(c.photo)||c.hasPhoto)
-      .sort((a,b)=>(isHunt(b)?1:0)-(isHunt(a)?1:0) || (b.pinned?1:0)-(a.pinned?1:0)).map(c=>({c, by:p.id}))).filter(l=>l.length);
+  const best = c => { let v = 0; try{ v = carValue(c) || +c.aiValue || 0 }catch(e){ v = +c.aiValue || 0 } return v + (isSTH(c) ? 1000 : isHunt(c) ? 500 : 0) + (c.pinned ? 50 : 0) };
+  const others = (withMe) => { const per = profileList().filter(p=>(withMe || p.id!==uid) && p.public!==false).map(p=>(p.cars||[]).filter(c=>safeImg(c.photo)||c.hasPhoto)
+      .map(c=>({c, by:p.id, v:best(c)})).sort((a,b)=>b.v-a.v)).filter(l=>l.length).sort((a,b)=>b[0].v-a[0].v);
     const r = []; for(let i=0; per.some(l=>l[i]); i++) per.forEach(l=>{ if(l[i]) r.push(l[i]) }); return r };
   const mine = [...own()].filter(c=>safeImg(c.photo)).sort((a,b)=>(isHunt(b)?1:0)-(isHunt(a)?1:0) || carValue(b)-carValue(a));
   if(!mine.length){
     // a brand-new collector has nothing of their own yet: open on real cars from other garages
-    others().slice(0,10).forEach(x=>add(x.c, ggPhoto(x.by, x.c), x.by));
+    others(true).slice(0,12).forEach(x=>add(x.c, ggPhoto(x.by, x.c), x.by));
   } else {
     mine.forEach(c=>add(c, c.photo));
     others().slice(0,4).forEach(x=>add(x.c, ggPhoto(x.by, x.c), x.by));
@@ -3818,7 +3867,15 @@ function render(){
   if(keepForm) return;               // don't wipe a form someone is typing in; it re-renders on blur
   const pc = page==="profile" && (profilesDocs[viewing]||{}).color;
   if(pc && COLORS.some(([v])=>v===pc)) document.body.style.setProperty("--accent", `var(--${pc})`); else document.body.style.removeProperty("--accent");
-  $("#app").innerHTML = accessNote() + v(); paintMe(); paintFoot(); if(tray) renderTray(); if(page==="home") hxMount(); if(page==="brands") placeBrandDetail(); if(page==="garage" && typeof hmMount==="function") hmMount();
+  // keep anything typed into a form that hasn't been submitted yet (a redraw used to wipe it)
+  const drafts = Date.now() - lastSubmitAt < 2500 ? [] : [...document.querySelectorAll("#app form input, #app form textarea, #app form select")].filter(el=>el.type!=="file" && (el.id || el.type==="radio")).map(el=>
+    el.type==="radio" ? (el.checked && !el.defaultChecked ? ["r", el.name, el.value] : null)
+    : el.type==="checkbox" ? (el.checked!==el.defaultChecked ? ["c", el.id, el.checked] : null)
+    : el.tagName==="SELECT" ? (el.value!==([...el.options].find(o=>o.defaultSelected)||el.options[0]||{}).value ? ["v", el.id, el.value] : null)
+    : (el.value!==el.defaultValue ? ["v", el.id, el.value] : null)).filter(Boolean);
+  $("#app").innerHTML = accessNote() + v();
+  for(const [k, a, b] of drafts){ if(k==="r"){ const r = [...document.querySelectorAll(`#app form input[type=radio]`)].find(x=>x.name===a && x.value===b); if(r) r.checked = true; continue } const el = document.getElementById(a); if(!el || !el.closest("form")) continue; if(k==="c") el.checked = b; else el.value = b }
+  paintMe(); paintFoot(); if(tray) renderTray(); if(page==="home") hxMount(); if(page==="brands") placeBrandDetail(); if(page==="garage" && typeof hmMount==="function") hmMount();
   if(focus && document.getElementById(focus)){ const el=document.getElementById(focus); el.focus(); try{ el.setSelectionRange(sel,sel) }catch(e){} }
   const brands = new Set([...allKnown().map(c=>c.brand), ...cars.map(c=>c.brand)].filter(Boolean));
   $("#brandlist").innerHTML = [...brands].sort().map(b=>`<option value="${esc(b)}">`).join("");
@@ -4149,10 +4206,16 @@ async function syncProfileNow(base){
     wants: pub ? want().slice(0,200).map(c=>[c.name, c.line||"", c.brand||"", makerOf(c)]) : [], cars:list, photoSigs:sigs, garage: pub && cur.garage ? cur.garage : null };
   const s = JSON.stringify(doc); if(s===lastProfile && !base) return; lastProfile = s;
   try{ await db.doc("profiles/"+uid).set({...doc, updatedAt:Date.now()}) }catch(e){ dbErr(e); return }
-  // full photos for every car, uploaded after the profile so new scans show up right away
-  for(const c of pick) if(sigs[c.id] && old[c.id]!==sigs[c.id]){ try{ await db.doc(`profiles/${uid}/photos/${c.id}`).set({url:c.photo}) }catch(e){} }
-  for(const id of Object.keys(old)) if(!sigs[id]) await db.doc(`profiles/${uid}/photos/${id}`).delete().catch(()=>{});
+  // full photos for every car upload in the background, one job at a time, only when a photo changed;
+  // a profile save never waits for them
+  if(!photoDone) photoDone = {...old};
+  const me = uid, jobPick = pick.filter(c=>sigs[c.id]).map(c=>({id:c.id, photo:c.photo, sig:sigs[c.id]})), keepIds = new Set(Object.keys(sigs));
+  photoJob = photoJob.then(async()=>{
+    for(const c of jobPick) if(photoDone[c.id]!==c.sig){ try{ await db.doc(`profiles/${me}/photos/${c.id}`).set({url:c.photo}); photoDone[c.id] = c.sig }catch(e){} }
+    for(const id of Object.keys(photoDone)) if(!keepIds.has(id)){ await db.doc(`profiles/${me}/photos/${id}`).delete().catch(()=>{}); delete photoDone[id] }
+  }).catch(()=>{});
 }
+let photoDone = null, photoJob = Promise.resolve();
 
 /* ---------- car detail sheet ---------- */
 let detail = null; const fullPhotos = {};
@@ -4452,7 +4515,7 @@ document.addEventListener("change", async e=>{
       if(needAccount()) return;
       const ph0 = await readImage(f, 720, .8); t.value = ""; trayAdd("scan", [ph0]); return }
     if(t.id==="f-photo"){ addPhoto = await readImage(f, 720, .8); const box=t.closest("label").querySelector(".ph"); box.outerHTML = ph(addPhoto); return }
-    if(t.id==="p-avatar"){ profEdit.avatar = await squareImage(f, 240); document.getElementById("p-avatar-prev").src = profEdit.avatar; return }
+    if(t.id==="p-avatar"){ t.value = ""; const out = await cropAvatar(f); if(out){ profEdit.avatar = out; document.getElementById("p-avatar-prev").src = out } return }
     if(t.dataset.cphoto){ const c=cars.find(x=>x.id===t.dataset.cphoto); if(!c) return; const raw=await readImage(f, 720, .8); toast("Fitting the card…"); const url=await autoCropCard(raw); const {orig, ...rest} = c; await save({...rest, photo:url, ...(url!==raw?{orig:raw}:{})}); toast("Photo added"); if(detail){ if(detail.mode==="photo") detail.mode="view"; renderDetail() } return }
     if(t.dataset.rphoto){ const name=t.dataset.rphoto, url=await readImage(f, 480, .75), ref = {name, line:t.dataset.rline||"", set:t.dataset.rset||"", num:t.dataset.rnum||""}, rk = relKey(ref); t.value = "";
       rmeta[rk] = {...ref, url}; if(!rphotos[key(name)]) rphotos[key(name)] = url; render();
