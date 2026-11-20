@@ -13,7 +13,7 @@
   const STATIC = {releases: "/data/releases.json", values: "/data/values.json", catalog: "/data/catalog.json", releasePhotos: "/data/site.json"};
 
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-    auth: {persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce"}
+    auth: {persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "implicit"}   // email links work in any browser on the phone
   });
   window.__sb = sb;
   window.__SITE_MODE = "live";

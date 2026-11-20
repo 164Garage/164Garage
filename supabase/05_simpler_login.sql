@@ -1,0 +1,5 @@
+-- Applied Nov 20, 2026 with the Supabase connector (migration "simpler_login").
+-- profile_from_signup trigger on auth.users: each new account gets its profile (username + display name) at sign-up.
+-- Backfilled profiles for accounts that signed up but never logged in (tyc, solantrio).
+-- login_email(): username lookup also uses the username picked at sign-up; any capitals.
+-- username_free(): usernames picked at sign-up count as taken.

@@ -25,6 +25,7 @@ HEAD = """<!doctype html>
 <meta property="og:url" content="https://www.1-64garage.com/">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/runtime.js"></script>
+<style>.pwwrap{position:relative;display:block}.pwwrap input{width:100%;padding-right:64px}.pweye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--accent);font:600 13px inherit;padding:6px 8px;cursor:pointer}</style>
 </head>
 <body>
 """
@@ -47,9 +48,9 @@ s = rep(s,
   """<h2>${authTab==="signup"?"Create your account":authTab==="forgot"?"Reset your password":"Log in"}</h2>
       <p class="muted">${authTab==="signup"?"It's free. You stay logged in on this device until you log out.":authTab==="forgot"?"Enter your email and we'll send a link. Tap it, then pick a new password.":"Use your username (or email) and password. You stay logged in until you log out."}</p>`}
       ${authTab==="signup" ? `<form class="form" id="signupform" autocomplete="on">
-        <label class="c6">Username<span class="uin"><i>@</i><input id="su-user" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_.]{3,20}" autocapitalize="none" autocomplete="username" spellcheck="false" placeholder="aidan164" title="3–20 letters, numbers, _ or ."></span></label>
+        <label class="c6">Username<span class="uin"><i>@</i><input id="su-user" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_.]{3,20}" autocapitalize="none" autocomplete="username" spellcheck="false" placeholder="pick a username" title="3–20 letters, numbers, _ or ."></span></label>
         <label class="c6">Email <span style="font-weight:500">(private, for password resets)</span><input id="su-email" type="email" required autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com"></label>
-        <label class="c6">Password <span style="font-weight:500">(8+ characters)</span><input id="su-pass" type="password" required minlength="8" autocomplete="new-password"></label>
+        <label class="c6">Password <span style="font-weight:500">(8+ characters)</span><span class="pwwrap"><input id="su-pass" type="password" required minlength="8" autocomplete="new-password"><button type="button" class="pweye" data-pweye="su-pass" aria-label="Show password">Show</button></span></label>
         <div class="c6"><button class="btn" type="submit">Create account</button></div>
       </form>
       ${loginMsg?`<p class="loginmsg">${loginMsg}</p>`:""}
@@ -61,8 +62,8 @@ s = rep(s,
       ${loginMsg?`<p class="loginmsg">${loginMsg}</p>`:""}
       <p class="small muted"><button class="link" data-authtab="login">Back to log in</button></p>`
       : `<form class="form" id="pwloginform" autocomplete="on">
-        <label class="c6">Username or email<input id="l-who" required autocapitalize="none" autocomplete="username" spellcheck="false" placeholder="aidan164" value="${esc(rm?.u||"")}"></label>
-        <label class="c6">Password<input id="l-pass" type="password" required autocomplete="current-password"></label>
+        <label class="c6">Username or email<input id="l-who" required autocapitalize="none" autocomplete="username" spellcheck="false" placeholder="Your username" value="${esc(rm?.u||"")}"></label>
+        <label class="c6">Password<span class="pwwrap"><input id="l-pass" type="password" required autocomplete="current-password"><button type="button" class="pweye" data-pweye="l-pass" aria-label="Show password">Show</button></span></label>
         <div class="c6"><button class="btn" type="submit">Log in</button></div>
       </form>
       ${loginMsg?`<p class="loginmsg">${loginMsg}</p>`:""}
@@ -103,6 +104,7 @@ s = rep(s, "Log out of Claude and log back in with the account you used to sign 
 s = rep(s, "  if(b.dataset.reload){ location.reload(); return }",
   """  if(b.dataset.reload){ location.reload(); return }
   if(b.dataset.authtab){ authTab = b.dataset.authtab; loginMsg = ""; render(); return }
+  if(b.dataset.pweye){ const i = document.getElementById(b.dataset.pweye); if(i){ const show = i.type==="password"; i.type = show ? "text" : "password"; b.textContent = show ? "Hide" : "Show"; b.setAttribute("aria-label", show ? "Hide password" : "Show password") } return }
   if(b.dataset.logout){ forgetMe(); window.__auth?.signOut(); return }
   if(b.dataset.google){ window.__auth?.google().catch(e=>toast(e.message||"Couldn't open Google")); return }""")
 s = rep(s, """  if(f.id==="loginform"){""",
@@ -111,7 +113,7 @@ s = rep(s, """  if(f.id==="loginform"){""",
     loginMsg = "Logging in…"; render();
     try{ await window.__auth.logIn(who, pw); loginMsg = "" }
     catch(err){ const c = err?.code;
-      loginMsg = c==="too_many" ? "Too many tries. Wait 15 minutes, or reset your password." : c==="unconfirmed" ? "Confirm your email first: tap the link we sent when you signed up." : c==="wrong" ? `That username and password don't match. <button class="link" data-authtab="forgot">Reset your password</button>` : "Couldn't log in right now. Try again in a minute." }
+      loginMsg = c==="too_many" ? "Too many tries. Wait 15 minutes, or reset your password." : c==="unconfirmed" ? "Confirm your email first: tap the link we sent when you signed up." : c==="wrong" ? `Wrong username or password. Check the spelling (capitals don't matter), tap <b>Show</b> to see the password, or <button class="link" data-authtab="forgot">reset your password</button>.` : "Couldn't log in right now. Try again in a minute." }
     render(); return }
   if(f.id==="signupform"){
     const un = $("#su-user").value.trim().replace(/^@/,""), em = $("#su-email").value.trim(), pw = $("#su-pass").value; document.activeElement.blur();
