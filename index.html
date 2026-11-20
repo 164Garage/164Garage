@@ -1515,10 +1515,15 @@ async function restoreVault(file){
   if(!window.__isOwner || !hasAccount()) return;
   let x; try{ x = JSON.parse(await file.text()) }catch(e){ toast("That file isn't a 1:64 Garage backup."); return }
   const list = (Array.isArray(x) ? x : x && x.cars || []).filter(c=>c && typeof c.id==="string" && c.name);
-  const have = new Set(cars.map(c=>c.id)), todo = list.filter(c=>!have.has(c.id));
-  if(!todo.length){ toast(list.length ? "Everything in that backup is already in your garage." : "No cars found in that file."); return }
-  let n = 0; for(const c of todo){ const {value, ...car} = c; if(car.photo && !safeImg(car.photo)) delete car.photo; importing = `${++n}/${todo.length}`; if(n%5===1) render(); await save(car) }
-  importing = ""; render(); toast(`Restored ${todo.length} car${todo.length===1?"":"s"}${list.length>todo.length?` (${list.length-todo.length} already here)`:""}`);
+  // a car already here (same id, or a copy moved without photos: same name and line) gets the backup's photo and details filled in
+  const taken = new Set(), match = c => { const m = cars.find(x=>!taken.has(x.id) && x.id===c.id) || cars.find(x=>!taken.has(x.id) && x.movedFrom && norm(x.name)===norm(c.name) && tier(x.line)===tier(c.line)); if(m) taken.add(m.id); return m };
+  let added = 0, filled = 0, n = 0;
+  for(const c of list){ const {value, ...car} = c; if(car.photo && !safeImg(car.photo)) delete car.photo; importing = `${++n}/${list.length}`; if(n%5===1) render();
+    const ex = match(car);
+    if(!ex){ await save(car); added++; continue }
+    const fill = {}; for(const [k,v] of Object.entries(car)) if(k!=="id" && v!=="" && v!==null && v!==undefined && (ex[k]===undefined || ex[k]==="" || ex[k]===null || (k==="cond" && ex.movedFrom))) fill[k] = v;
+    if(Object.keys(fill).length){ const {movedFrom, ...rest} = {...ex, ...fill}; await save(rest); filled++ } }
+  importing = ""; render(); toast(added || filled ? `Restored: ${added} added${filled?`, ${filled} updated with photos and details`:""}` : "Everything in that backup is already in your garage.");
 }
 async function commitImport(){
   if(!importPlan) return; const todo = importPlan.plan.filter(p=>p.act!=="skip"); let n = 0;
